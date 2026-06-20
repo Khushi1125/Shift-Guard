@@ -1,0 +1,25 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── OS / editor cruft ─────────────────────────────────────────────────────────
+.DS_Store
+.cursor/
+
+# ── Raw dataset (large; download separately into data/) ───────────────────────
+data/
+
+# ── Generated artifacts (reproducible from the notebooks/scripts) ─────────────
+# The large captured pickle is regenerable via src/e4_loader.py.
+outputs/e4_captured.pkl
+# Keep smaller, useful artifacts (features CSV, summary, trained model) tracked
+# by NOT ignoring them. Remove the lines below to ignore them too if preferred.
+# outputs/features_30s.csv
+# outputs/rf_baseline.joblib
