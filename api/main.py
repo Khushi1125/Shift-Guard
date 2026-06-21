@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 import os
 import sys
 import random
+import tempfile
 
 # Add project root to Python path so we can import model, pipeline, etc.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +18,26 @@ sys.path.insert(0, BASE_DIR)
 # Load environment variables from .env file
 from dotenv import load_dotenv
 load_dotenv()
+
+# ========== VOICE / DEEPGRAM SETUP ==========
+# The dashboard records the mic (WebM/Opus), uploads it here, we convert it to
+# WAV with pydub (-> ffmpeg) and send it to Deepgram for transcription.
+from deepgram import DeepgramClient
+from pydub import AudioSegment
+
+# Where converted WAV files land. Created on startup; git-ignored.
+RECORDINGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recordings")
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
+
+# Deepgram client — None if the key is missing, so the app still boots and the
+# /transcribe endpoint can return a clean "add your key" error instead of crashing.
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+if DEEPGRAM_API_KEY:
+    deepgram = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+    print("[OK] Deepgram client initialized")
+else:
+    deepgram = None
+    print("[WARN] DEEPGRAM_API_KEY not set — /transcribe will return an error until you add it to .env")
 
 # ========== REAL MODEL INTEGRATION ==========
 from model.predict import predict_stress
@@ -120,10 +141,9 @@ risk_window = deque(maxlen=WINDOW_SIZE)  # holds dicts: {"timestamp": str, "risk
 
 # Pydantic Models
 class Contributors(BaseModel):
-    voice_fatigue: int
-    movement_drift: int
-    hrv: int
-    shift_duration: int
+    heart_rate: int       # bpm (ESP32 sensor)
+    temperature: float    # °C (ESP32 sensor)
+    voice_fatigue: int    # 0-100, from the latest voice recording's acoustic fatigue
 
 
 class Song(BaseModel):
@@ -178,93 +198,27 @@ class ArduinoReading(BaseModel):
 # Store latest live Arduino reading from bridge.py
 latest_arduino_reading: Optional[ArduinoReading] = None
 
+# Store the most recent real transcription from /transcribe.
+# None until the first recording — /latest-transcript falls back to mock until then.
+latest_transcript: Optional[TranscriptResponse] = None
+
 
 # Contributor Calculation using Feature Importances
-def calculate_contributors(features: ModelFeatures) -> Contributors:
-    """
-    Calculate contributors based on actual model feature importances.
+def voice_fatigue_score() -> int:
+    """Latest acoustic fatigue (0.0-1.0 from compute_acoustic_fatigue) scaled to
+    0-100. Returns 0 until the first voice recording comes through /transcribe."""
+    if latest_transcript is not None:
+        return round(latest_transcript.acoustic_fatigue * 100)
+    return 0
 
-    Groups features by sensor type and weights by importance:
-    - EDA (63%): Stress markers from skin conductance
-    - Heart Rate (21%): Cardiovascular response
-    - Temperature (11%): Thermal regulation
-    - Movement (4%): Physical activity patterns
 
-    Returns normalized scores (0-100) showing relative contribution to risk.
-    """
-    if feature_importances is None:
-        # Fallback to mock if importances not loaded
-        return generate_contributors()
-
-    # Convert features to dict for easier access
-    feat_dict = features.model_dump()
-
-    # Calculate weighted scores for each sensor group
-    # Formula: sum(feature_value * normalized_feature_importance * scaling_factor)
-
-    # EDA group (63% importance): eda_mean, eda_max, eda_std
-    # WESAD S2 range: mean 0.09-1.28 (avg ~0.48), max 0.1-1.5 (avg ~0.53), std 0.001-0.13 (avg ~0.02)
-    eda_importance = sum([
-        feature_importances.get('eda_mean', 0),
-        feature_importances.get('eda_max', 0),
-        feature_importances.get('eda_std', 0)
-    ])
-    eda_weighted = (
-        feat_dict['eda_mean'] * feature_importances.get('eda_mean', 0) +
-        feat_dict['eda_max'] * feature_importances.get('eda_max', 0) +
-        feat_dict['eda_std'] * feature_importances.get('eda_std', 0) * 20  # std is much smaller
-    )
-    eda_score = (eda_weighted / eda_importance) * 100  # Scale: 0.5 mean → ~50/100, 1.0 → ~100/100
-
-    # Heart Rate group (21% importance): hr_mean, hr_min, hr_max, hr_std
-    # WESAD range: mean 50-140 (avg ~84), std 0-23 (avg ~6), min 43-133, max 54-145
-    hr_importance = sum([
-        feature_importances.get('hr_mean', 0),
-        feature_importances.get('hr_min', 0),
-        feature_importances.get('hr_max', 0),
-        feature_importances.get('hr_std', 0)
-    ])
-    hr_weighted = (
-        (feat_dict['hr_mean'] - 70) * feature_importances.get('hr_mean', 0) +  # Baseline 70 bpm
-        (feat_dict['hr_max'] - feat_dict['hr_min']) * feature_importances.get('hr_min', 0) * 0.1 +
-        feat_dict['hr_std'] * feature_importances.get('hr_std', 0)
-    )
-    hr_score = (hr_weighted / hr_importance) * 2.5  # Scale: 84 mean → ~35/100, 110 → ~75/100
-
-    # Temperature group (11% importance): temp_mean, temp_slope, temp_delta
-    # WESAD range: mean 29-36°C (avg ~33), delta -0.4 to +0.5
-    temp_importance = sum([
-        feature_importances.get('temp_mean', 0),
-        feature_importances.get('temp_slope', 0),
-        feature_importances.get('temp_delta', 0)
-    ])
-    temp_weighted = (
-        (feat_dict['temp_mean'] - 33.0) * feature_importances.get('temp_mean', 0) * 5 +  # Baseline 33°C
-        abs(feat_dict['temp_slope']) * feature_importances.get('temp_slope', 0) * 100 +
-        abs(feat_dict['temp_delta']) * feature_importances.get('temp_delta', 0) * 50
-    )
-    temp_score = (temp_weighted / temp_importance) * 10  # Scale appropriately
-
-    # Movement group (4% importance): acc_mag_mean, acc_mag_std, acc_hf_mean
-    # WESAD range: mag_mean 62-67 (gravity units, avg ~63.7), std 0-22 (avg ~2.6)
-    acc_importance = sum([
-        feature_importances.get('acc_mag_mean', 0),
-        feature_importances.get('acc_mag_std', 0),
-        feature_importances.get('acc_hf_mean', 0)
-    ])
-    movement_weighted = (
-        abs(feat_dict['acc_mag_mean'] - 63.7) * feature_importances.get('acc_mag_mean', 0) * 5 +  # Deviation from mean
-        feat_dict['acc_mag_std'] * feature_importances.get('acc_mag_std', 0) +
-        feat_dict['acc_hf_mean'] * feature_importances.get('acc_hf_mean', 0) * 10
-    )
-    movement_score = (movement_weighted / acc_importance) * 15  # Scale: 2.6 std → ~40/100
-
-    # Clamp all scores to 0-100 range
+def build_contributors(heart_rate: int, temperature: float) -> Contributors:
+    """The three raw signals shown on the Contributors card: live heart rate,
+    temperature, and the latest voice fatigue score."""
     return Contributors(
-        voice_fatigue=0,  # Not implemented yet (placeholder for future Deepgram integration)
-        movement_drift=max(0, min(100, int(movement_score))),
-        hrv=max(0, min(100, int(hr_score))),
-        shift_duration=max(0, min(100, int(eda_score)))  # Using EDA as "stress accumulation" proxy
+        heart_rate=heart_rate,
+        temperature=temperature,
+        voice_fatigue=voice_fatigue_score(),
     )
 
 
@@ -280,16 +234,6 @@ def generate_vitals(risk: int):
     if risk == 1:
         return random.randint(95, 120), round(random.uniform(37.2, 38.0), 1)
     return random.randint(60, 85), round(random.uniform(36.4, 37.0), 1)
-
-
-def generate_contributors() -> Contributors:
-    """Generate signal levels that drove the decision."""
-    return Contributors(
-        voice_fatigue=random.randint(5, 40),
-        movement_drift=random.randint(5, 30),
-        hrv=random.randint(5, 20),
-        shift_duration=random.randint(5, 25)
-    )
 
 
 # Curated songs. CALM = wind down when fatigued; FOCUS = keep the rhythm when clear.
@@ -366,6 +310,57 @@ def generate_transcript() -> str:
     return random.choice(transcripts)
 
 
+def compute_acoustic_fatigue(words: List[dict], duration_sec: float, speech_rate: int) -> float:
+    """
+    Turn Deepgram's word-level output into a 0.0–1.0 acoustic fatigue score
+    (higher = more fatigued-sounding voice). Shown on the dashboard's Fatigue metric.
+
+    You are given:
+      words        - list of {"word": str, "start": float, "end": float, "confidence": float},
+                     one entry per spoken word, timings in seconds.
+      duration_sec - active speaking span in seconds (first word start -> last word
+                     end; leading/trailing silence already removed).
+      speech_rate  - words per minute (already computed for you).
+
+    Signals you can combine (your call — this shapes what the dashboard reports):
+      - Slow speech: low WPM reads as tired. A fresh speaker is ~130-160 WPM;
+        under ~90 WPM looks fatigued.
+      - Long pauses: large gaps between words[i]["end"] and words[i+1]["start"]
+        = hesitation / dragging.
+      - Low confidence: slurred/mumbled words lower Deepgram's per-word confidence.
+
+    Return a float clamped to [0.0, 1.0], rounded to 2 decimals.
+
+    Default implementation: a weighted blend of three sub-scores (each 0-1).
+    Tweak the thresholds and weights below to taste.
+    """
+    # Nothing to score on an empty/silent clip.
+    if not words or duration_sec <= 0:
+        return 0.0
+
+    def clamp01(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    # 1. Slow speech: 150 WPM (fresh) -> 0.0, 90 WPM or slower (tired) -> 1.0.
+    slow_score = clamp01((150 - speech_rate) / (150 - 90))
+
+    # 2. Pause ratio: share of the clip spent silent between words.
+    #    ~0% silence -> 0.0, >=40% silence -> 1.0. (needs >=2 words for a gap)
+    total_gap = sum(
+        max(0.0, words[i + 1]["start"] - words[i]["end"])
+        for i in range(len(words) - 1)
+    )
+    pause_score = clamp01((total_gap / duration_sec) / 0.40)
+
+    # 3. Mumbling: avg per-word confidence. 0.95 (crisp) -> 0.0, 0.60 (slurred) -> 1.0.
+    avg_conf = sum(w["confidence"] for w in words) / len(words)
+    mumble_score = clamp01((0.95 - avg_conf) / (0.95 - 0.60))
+
+    # Weighted blend — WPM is the most reliable signal, confidence the noisiest.
+    fatigue = 0.5 * slow_score + 0.3 * pause_score + 0.2 * mumble_score
+    return round(clamp01(fatigue), 2)
+
+
 def record_reading(risk: int, heart_rate: int, temperature: float) -> None:
     """Append a new reading (risk + vitals) to the sliding window."""
     risk_window.append({
@@ -422,9 +417,6 @@ async def get_dashboard():
         heart_rate = int(latest_arduino_reading.bpm)
         temperature = round(latest_arduino_reading.temp_c, 1)
 
-        # Generate contributors (mock for now since we only have 2 features)
-        contributors = generate_contributors()
-
         print(f"[LIVE] Arduino data: BPM={heart_rate}, Temp={temperature}, Risk={risk}")
 
     # PRIORITY 2: Use WESAD replay if available and no live data
@@ -441,22 +433,20 @@ async def get_dashboard():
             heart_rate = int(features.hr_mean)
             temperature = round(features.temp_mean, 1)
 
-            # Calculate contributors using feature importances
-            contributors = calculate_contributors(features)
-
             print(f"[MODEL] Predicted risk={risk} (prob={result['probability']:.2f}), HR={heart_rate}, Temp={temperature}")
 
         except Exception as e:
             print(f"[ERROR] Model prediction failed: {e}, falling back to mock")
             risk = generate_risk()
             heart_rate, temperature = generate_vitals(risk)
-            contributors = generate_contributors()
 
     # PRIORITY 3: Fallback to mock if nothing else available
     else:
         risk = generate_risk()
         heart_rate, temperature = generate_vitals(risk)
-        contributors = generate_contributors()
+
+    # Contributors card = the three raw signals (HR, temp, latest voice fatigue).
+    contributors = build_contributors(heart_rate, temperature)
 
     # Get recommendation based on sliding window
     recommendation, song = decide_recommendation(risk_window)
@@ -486,8 +476,8 @@ async def predict(features: ModelFeatures):
         result = predict_stress(features)
         risk = result['prediction']  # 0 or 1
 
-        # Calculate contributors using feature importances
-        contributors = calculate_contributors(features)
+        # Contributors = raw signals: HR + temp from the features, latest voice fatigue.
+        contributors = build_contributors(int(features.hr_mean), round(features.temp_mean, 1))
 
         print(f"[PREDICT] Input features → risk={risk} (prob={result['probability']:.2f})")
 
@@ -502,16 +492,105 @@ async def predict(features: ModelFeatures):
         # Fallback to mock if prediction fails
         return PredictResponse(
             risk=generate_risk(),
-            contributors=generate_contributors(),
+            contributors=build_contributors(int(features.hr_mean), round(features.temp_mean, 1)),
             timestamp=datetime.now().isoformat()
         )
 
 
+@app.post("/transcribe", response_model=TranscriptResponse)
+async def transcribe(file: UploadFile = File(...)):
+    """
+    Receive a mic recording (WebM/Opus) from the dashboard, convert it to WAV,
+    transcribe it with Deepgram, and return the transcript + voice metrics.
+
+    The result is also cached so GET /latest-transcript serves the real one.
+    """
+    global latest_transcript
+
+    if deepgram is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Deepgram not configured. Add DEEPGRAM_API_KEY to .env and restart the server."
+        )
+
+    webm_bytes = await file.read()
+    if not webm_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload.")
+
+    # Save the incoming WebM to a temp file so ffmpeg/pydub can read it.
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+        tmp.write(webm_bytes)
+        webm_path = tmp.name
+
+    try:
+        # 1. Convert WebM/Opus -> WAV (pydub shells out to ffmpeg). Keep the WAV
+        #    as the artifact the user asked for.
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        wav_path = os.path.join(RECORDINGS_DIR, f"voice_{timestamp}.wav")
+        AudioSegment.from_file(webm_path).export(wav_path, format="wav")
+
+        # 2. Send the WAV bytes to Deepgram.
+        with open(wav_path, "rb") as f:
+            audio_data = f.read()
+
+        response = deepgram.listen.v1.media.transcribe_file(
+            request=audio_data,
+            model="nova-3",
+            smart_format=True,
+            punctuate=True,
+            filler_words=True,   # surfaces "um"/"uh" — a fatigue signal
+        )
+
+        # 3. Extract the transcript + word-level timings.
+        alt = response.results.channels[0].alternatives[0]
+        transcript = alt.transcript or ""
+        words = [
+            {"word": w.word, "start": w.start, "end": w.end, "confidence": w.confidence}
+            for w in (alt.words or [])
+        ]
+        # Measure over the SPEAKING span (first word start -> last word end), not the
+        # whole clip. Otherwise dead air before/after you talk (e.g. reaching for the
+        # Stop button) drags WPM down and inflates fatigue. Fall back to clip duration
+        # if there's 0-1 words.
+        clip_duration = float(response.metadata.duration or 0.0)
+        speaking_span = (words[-1]["end"] - words[0]["start"]) if len(words) >= 2 else clip_duration
+
+        # 4. Derive metrics (speech_rate here, fatigue is yours to define).
+        speech_rate = round(len(words) / (speaking_span / 60)) if speaking_span > 0 else 0
+        acoustic_fatigue = compute_acoustic_fatigue(words, speaking_span, speech_rate)
+
+        result = TranscriptResponse(
+            transcript=transcript or "(no speech detected)",
+            speech_rate=speech_rate,
+            acoustic_fatigue=acoustic_fatigue,
+            timestamp=datetime.now().isoformat(),
+        )
+        latest_transcript = result
+        print(f"[DEEPGRAM] '{transcript}' | {len(words)} words, "
+              f"clip={clip_duration:.1f}s speaking={speaking_span:.1f}s, "
+              f"{speech_rate} WPM, fatigue={acoustic_fatigue}")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    finally:
+        # Drop the temp WebM (the WAV in recordings/ is the kept artifact).
+        if os.path.exists(webm_path):
+            os.remove(webm_path)
+
+
 @app.get("/latest-transcript", response_model=TranscriptResponse)
 async def get_latest_transcript():
-    """Get latest transcript from Deepgram (mock data)"""
-    transcript = generate_transcript()
+    """Return the latest real transcription from /transcribe if we have one,
+    otherwise fall back to mock data so the dashboard still shows something
+    before the first recording."""
+    if latest_transcript is not None:
+        return latest_transcript
 
+    transcript = generate_transcript()
     return TranscriptResponse(
         transcript=transcript,
         speech_rate=random.randint(80, 120),  # words per minute

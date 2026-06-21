@@ -108,6 +108,87 @@
             transform: translateY(0);
         }
 
+        /* Record Voice button — primary full-width action.
+           Emerald idle, red + pulsing while capturing. The dashboard auto-polls
+           every 2s, so there's no separate manual refresh button. */
+        .record-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--color-success) 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-family: 'Rubik', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Inline SVG icon inside the button — sized in em so it scales with text */
+        .btn-icon {
+            width: 1.15em;
+            height: 1.15em;
+            flex-shrink: 0;
+        }
+
+        #recordIcon {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Spinner shown while the recording uploads + Deepgram transcribes */
+        .btn-spinner {
+            width: 1em;
+            height: 1em;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: #FFFFFF;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .record-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .record-btn:active {
+            transform: translateY(0);
+        }
+
+        .record-btn.recording {
+            background: linear-gradient(135deg, var(--color-danger) 0%, #DC2626 100%);
+            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+            animation: pulse-badge 1.5s ease-in-out infinite;
+        }
+
+        .record-btn.processing {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* Small live red dot shown inside the button while recording */
+        .rec-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #FFFFFF;
+            box-shadow: 0 0 8px #FFFFFF;
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+
         /* Grid Layout */
         .dashboard-grid {
             display: grid;
@@ -513,7 +594,17 @@
     <div class="container">
         <h1>Burnout Detection</h1>
 
-        <button class="refresh-btn" onclick="refreshDashboard()">Refresh Dashboard</button>
+        <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+            <span id="recordIcon">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </span>
+            <span id="recordLabel">Record Voice</span>
+        </button>
 
         <div class="dashboard-grid">
             <!-- Risk Score Card -->
@@ -604,10 +695,6 @@
                     </div>
                     <div class="status-item">
                         <div class="status-indicator status-online"></div>
-                        <span class="status-name">QNX</span>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-indicator status-online"></div>
                         <span class="status-name">API</span>
                     </div>
                 </div>
@@ -632,20 +719,16 @@
 
             const contributorsHTML = `
                 <div class="contributor-item">
+                    <span class="contributor-name">Heart Rate</span>
+                    <span class="contributor-value">${data.contributors.heart_rate} bpm</span>
+                </div>
+                <div class="contributor-item">
+                    <span class="contributor-name">Temperature</span>
+                    <span class="contributor-value">${data.contributors.temperature}°C</span>
+                </div>
+                <div class="contributor-item">
                     <span class="contributor-name">Voice Fatigue</span>
-                    <span class="contributor-value">+${data.contributors.voice_fatigue}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">Movement Drift</span>
-                    <span class="contributor-value">+${data.contributors.movement_drift}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">HRV</span>
-                    <span class="contributor-value">+${data.contributors.hrv}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">Shift Duration</span>
-                    <span class="contributor-value">+${data.contributors.shift_duration}</span>
+                    <span class="contributor-value">${data.contributors.voice_fatigue}/100</span>
                 </div>
             `;
             document.getElementById('contributors').innerHTML = contributorsHTML;
@@ -657,13 +740,97 @@
             document.getElementById('songText').textContent = `${data.song.name} — ${data.song.artist}`;
         }
 
-        async function fetchTranscript() {
-            const response = await fetch('http://localhost:8000/latest-transcript');
-            const data = await response.json();
-
+        // Single place that writes the transcript card, so the 2s poll and the
+        // live recording path render identically.
+        function renderTranscript(data) {
             document.getElementById('transcript').textContent = `"${data.transcript}"`;
             document.getElementById('speechRate').textContent = data.speech_rate;
             document.getElementById('fatigueScore').textContent = data.acoustic_fatigue;
+        }
+
+        async function fetchTranscript() {
+            const response = await fetch('http://localhost:8000/latest-transcript');
+            const data = await response.json();
+            renderTranscript(data);
+        }
+
+        // ---- Voice recording (MediaRecorder) ----------------------------------
+        // Click once to start capturing the mic, click again to stop. On stop we
+        // bundle the WebM/Opus chunks into a Blob and POST it to /transcribe, which
+        // converts to WAV and runs Deepgram. The transcript card shows the result.
+        let mediaRecorder = null;   // held across the two clicks
+        let audioChunks = [];
+
+        // Icon markup reused when resetting the button (no emoji — inline SVG/CSS).
+        const MIC_SVG = `<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>`;
+        const REC_DOT = '<span class="rec-dot"></span>';
+        const SPINNER = '<span class="btn-spinner"></span>';
+
+        async function toggleRecording() {
+            const btn = document.getElementById('recordBtn');
+
+            // Second click: stop and let the 'stop' handler do the upload.
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                return;
+            }
+
+            // First click: ask for the mic and start recording.
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.addEventListener('dataavailable', e => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                });
+
+                mediaRecorder.addEventListener('stop', async () => {
+                    // Release the mic so the browser's recording indicator turns off.
+                    stream.getTracks().forEach(t => t.stop());
+                    await uploadRecording();
+                });
+
+                mediaRecorder.start();
+                btn.classList.add('recording');
+                document.getElementById('recordIcon').innerHTML = REC_DOT;
+                document.getElementById('recordLabel').textContent = 'Stop';
+            } catch (err) {
+                alert('Could not access microphone: ' + err.message);
+            }
+        }
+
+        async function uploadRecording() {
+            const btn = document.getElementById('recordBtn');
+            btn.classList.remove('recording');
+            btn.classList.add('processing');
+            document.getElementById('recordIcon').innerHTML = SPINNER;
+            document.getElementById('recordLabel').textContent = 'Transcribing...';
+
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', blob, 'voice.webm');
+
+            try {
+                const response = await fetch('http://localhost:8000/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) throw new Error('Server returned ' + response.status);
+                const data = await response.json();
+                renderTranscript(data);
+            } catch (err) {
+                alert('Transcription failed: ' + err.message);
+            } finally {
+                btn.classList.remove('processing');
+                document.getElementById('recordIcon').innerHTML = MIC_SVG;
+                document.getElementById('recordLabel').textContent = 'Record Voice';
+            }
         }
 
         // Build or update a single line chart. Returns the chart instance so the

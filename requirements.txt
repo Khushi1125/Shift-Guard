@@ -21,3 +21,8 @@ requests==2.31.0
 
 # Arize monitoring
 arize==8.2.0
+
+# Voice transcription (mic -> WebM, convert to WAV, Deepgram STT)
+deepgram-sdk==7.3.1
+pydub==0.25.1               # WebM/Opus -> WAV (shells out to ffmpeg)
+python-multipart==0.0.32   # FastAPI file uploads
