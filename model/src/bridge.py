@@ -11,12 +11,16 @@ import csv
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-load_dotenv()
 from final_scoring import on_sensor_update
+from arize import ArizeClient
+from arize.ml.types import ModelTypes, Environments
 
-# ARIZE CONFIG
+load_dotenv()
+
+# ARIZE CONFIG + initialize client
 ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
 ARIZE_SPACE_ID = os.getenv("ARIZE_SPACE_ID")
+arize_client = ArizeClient(api_key=ARIZE_API_KEY)
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
@@ -55,19 +59,17 @@ def find_arduino_port():
 # ARIZE LOGGING
 def log_to_arize(bpm, temp_c, risk):
     try:
-        response = requests.post(
-            "https://api.arize.com/v1/log",
-            headers={
-                "Authorization": f"Bearer {ARIZE_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model_id": "shiftguard-rf",
-                "prediction_id": str(datetime.now().timestamp()),
-                "features": {"bpm": bpm, "temp_c": temp_c},
-                "prediction_label": risk,
-            },
-            timeout=2,
+        arize_client.ml.log_stream(
+            space_id=ARIZE_SPACE_ID,
+            model_name="shiftguard-rf",
+            model_type=ModelTypes.SCORE_CATEGORICAL,
+            environment="production",
+            prediction_id=f"pred_{int(time.time())}",
+            prediction_label=risk,
+            features={
+                "bpm": float(bpm),
+                "temp_c": float(temp_c)
+            }
         )
     except Exception as e:
         print(f"  Arize log failed: {e}")
