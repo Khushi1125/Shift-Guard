@@ -7,7 +7,16 @@ from datetime import datetime
 from collections import deque
 from urllib.parse import quote_plus
 import os
+import sys
 import random
+
+# Add project root to Python path so we can import model, pipeline, etc.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE_DIR)
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
 # ========== REAL MODEL INTEGRATION ==========
 from model.predict import predict_stress
@@ -16,8 +25,7 @@ import pandas as pd
 import joblib
 import numpy as np
 
-# Project root (one level up from this api/ folder), used to locate the frontend.
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# BASE_DIR already set above for sys.path
 DASHBOARD_FILE = os.path.join(BASE_DIR, "frontend", "dashboard.html")
 
 # Load pre-computed WESAD features for replay
