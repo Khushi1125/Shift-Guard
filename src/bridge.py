@@ -45,7 +45,7 @@ def find_arduino_port():
     raise Exception("Arduino not found. Plug it in and try again.")
 
 
-# ARISE LOGGING
+# ARIZE LOGGING
 def log_to_arize(bpm, temp_c, risk):
     try:
         response = requests.post(
