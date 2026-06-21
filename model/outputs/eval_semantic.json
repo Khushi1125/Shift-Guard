@@ -1,0 +1,289 @@
+{
+  "n_total": 28,
+  "n_correct": 23,
+  "direction_accuracy": 0.9583,
+  "mean_score_calm": 0.5985,
+  "mean_score_stressed": -0.5524,
+  "score_gap": 1.1509,
+  "neutral_mean_abs_score": 0.0,
+  "edge_case_results": [
+    {
+      "description": "empty string",
+      "text": "",
+      "score": 0.0,
+      "predicted": "neutral",
+      "expected": "neutral",
+      "pass": true
+    },
+    {
+      "description": "whitespace only",
+      "text": "   ",
+      "score": 0.0,
+      "predicted": "neutral",
+      "expected": "neutral",
+      "pass": true
+    },
+    {
+      "description": "single word",
+      "text": "help",
+      "score": 0.4019,
+      "predicted": "calm",
+      "expected": "neutral",
+      "pass": false
+    },
+    {
+      "description": "repeated single word",
+      "text": "help help help help help help",
+      "score": 0.9349,
+      "predicted": "calm",
+      "expected": "neutral",
+      "pass": false
+    },
+    {
+      "description": "negation \u2014 VADER handles this; should read as calm",
+      "text": "I'm not stressed at all",
+      "score": 0.2584,
+      "predicted": "calm",
+      "expected": "calm",
+      "pass": true
+    },
+    {
+      "description": "ambiguous word \u2014 could be dismissive ('I'm fine') or genuinely okay",
+      "text": "fine",
+      "score": 0.2023,
+      "predicted": "calm",
+      "expected": "neutral",
+      "pass": false
+    },
+    {
+      "description": "double negation \u2014 should come out slightly positive",
+      "text": "It was not a bad day",
+      "score": 0.431,
+      "predicted": "calm",
+      "expected": "calm",
+      "pass": true
+    },
+    {
+      "description": "punctuation only \u2014 no meaningful content",
+      "text": "!!!!",
+      "score": 0.0,
+      "predicted": "neutral",
+      "expected": "neutral",
+      "pass": true
+    },
+    {
+      "description": "clinical jargon \u2014 neutral factual statement",
+      "text": "The patient coded.",
+      "score": 0.0,
+      "predicted": "neutral",
+      "expected": "neutral",
+      "pass": true
+    },
+    {
+      "description": "mixed valence \u2014 tired (neg) vs achievement (pos)",
+      "text": "I'm so tired but I did it.",
+      "score": -0.2724,
+      "predicted": "stressed",
+      "expected": "neutral",
+      "pass": false
+    }
+  ],
+  "per_sentence": [
+    {
+      "text": "I'm completely overwhelmed and I can't keep up anymore.",
+      "expected": "stressed",
+      "score": 0.1263,
+      "predicted": "calm",
+      "correct": false
+    },
+    {
+      "text": "This is terrible. Nothing is working and I'm falling apart.",
+      "expected": "stressed",
+      "score": -0.5719,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I feel trapped and exhausted. I don't know how much longer I can do this.",
+      "expected": "stressed",
+      "score": -0.7096,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I hate these shifts. Everyone is demanding more than I can give.",
+      "expected": "stressed",
+      "score": -0.6808,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I'm running on empty. I haven't slept in two days.",
+      "expected": "stressed",
+      "score": -0.2023,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I'm so frustrated. The patient deteriorated and I feel like I failed.",
+      "expected": "stressed",
+      "score": -0.6697,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "Everything hurts and I don't care anymore. I'm done.",
+      "expected": "stressed",
+      "score": -0.6935,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "This job is destroying me. I feel hopeless and burned out.",
+      "expected": "stressed",
+      "score": -0.765,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "Another awful day. I messed up twice and I can't forgive myself.",
+      "expected": "stressed",
+      "score": -0.7363,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I'm panicking. There's too much to do and not enough time.",
+      "expected": "stressed",
+      "score": -0.4404,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "I feel disconnected and numb. Nothing feels meaningful anymore.",
+      "expected": "stressed",
+      "score": -0.5207,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "It was chaos today. I was scared and I didn't know what to do.",
+      "expected": "stressed",
+      "score": -0.765,
+      "predicted": "stressed",
+      "correct": true
+    },
+    {
+      "text": "Today was a good day. I handled everything well and I feel proud.",
+      "expected": "calm",
+      "score": 0.7964,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I feel calm and focused. The shift went smoothly.",
+      "expected": "calm",
+      "score": 0.5994,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I'm grateful for the support from my team. We work well together.",
+      "expected": "calm",
+      "score": 0.7783,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I helped a patient recover today. It was really rewarding.",
+      "expected": "calm",
+      "score": 0.5709,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I feel rested and ready. I slept well and I'm looking forward to the day.",
+      "expected": "calm",
+      "score": 0.5574,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "Everything went according to plan. I'm satisfied with how I handled things.",
+      "expected": "calm",
+      "score": 0.4215,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I feel confident and in control. The team was great today.",
+      "expected": "calm",
+      "score": 0.8074,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I managed to stay composed even during a tough call. I'm proud of that.",
+      "expected": "calm",
+      "score": 0.3818,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I love this work. Even when it's hard, I know it matters.",
+      "expected": "calm",
+      "score": 0.5994,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I feel at peace with today. I did my best and that's enough.",
+      "expected": "calm",
+      "score": 0.8271,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "The handover was smooth and I left on time. Good day overall.",
+      "expected": "calm",
+      "score": 0.4404,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "I had a moment of clarity today. I know why I do this job.",
+      "expected": "calm",
+      "score": 0.4019,
+      "predicted": "calm",
+      "correct": true
+    },
+    {
+      "text": "The patient is in room four.",
+      "expected": "neutral",
+      "score": 0.0,
+      "predicted": "neutral",
+      "correct": true
+    },
+    {
+      "text": "Shift starts at seven in the morning.",
+      "expected": "neutral",
+      "score": 0.0,
+      "predicted": "neutral",
+      "correct": true
+    },
+    {
+      "text": "The report was submitted at the end of the day.",
+      "expected": "neutral",
+      "score": 0.0,
+      "predicted": "neutral",
+      "correct": true
+    },
+    {
+      "text": "I attended a briefing about the new protocol.",
+      "expected": "neutral",
+      "score": 0.0,
+      "predicted": "neutral",
+      "correct": true
+    }
+  ]
+}
