@@ -9,10 +9,12 @@ import csv
 import os
 from datetime import datetime
 from model import predict
+from dotenv import load_dotenv
+load_dotenv()
 
-# arize imports
-from arize.api import Client
-from arize.utils.types import ModelTypes, Environments
+# ARIZE CONFIG
+ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
+ARIZE_SPACE_ID = os.getenv("ARIZE_SPACE_ID")
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
@@ -25,11 +27,6 @@ BAUD_RATE = 115200
 # Optional: log all readings to a CSV file
 ENABLE_CSV_LOG = True
 CSV_FILE = "readings_log.csv"
-
-ARIZE_API_KEY  = "ak-0ec7a115-6ce4-46b2-bfe9-e79217547021-BLSvAJlYss7hZ9X0QZV2aJ4Wl-6EEzo2"
-ARIZE_SPACE_ID = "U3BhY2U6NDcyOTM6UzNoeQ=="
-
-arize_client = Client(api_key=ARIZE_API_KEY, space_id=ARIZE_SPACE_ID)
 
 # ── AUTO-DETECT ARDUINO PORT ──────────────────────────────────────────────────
 
@@ -49,20 +46,21 @@ def find_arduino_port():
 
 
 # ARISE LOGGING
-
 def log_to_arize(bpm, temp_c, risk):
     try:
-        arize_client.log(
-            model_id="shiftguard-rf",
-            model_version="1.0",
-            model_type=ModelTypes.NUMERIC,
-            environment=Environments.PRODUCTION,
-            prediction_id=str(datetime.now().timestamp()),
-            prediction_label=float(risk),
-            features={
-                "bpm": float(bpm),
-                "temp_c": float(temp_c),
+        response = requests.post(
+            "https://api.arize.com/v1/log",
+            headers={
+                "Authorization": f"Bearer {ARIZE_API_KEY}",
+                "Content-Type": "application/json",
             },
+            json={
+                "model_id": "shiftguard-rf",
+                "prediction_id": str(datetime.now().timestamp()),
+                "features": {"bpm": bpm, "temp_c": temp_c},
+                "prediction_label": risk,
+            },
+            timeout=2,
         )
     except Exception as e:
         print(f"  Arize log failed: {e}")
