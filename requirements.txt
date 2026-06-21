@@ -33,17 +33,5 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.0
 
-# Arduino bridge
-pyserial==3.5
-requests==2.31.0
-
-# Arize monitoring
-arize==8.2.0
-
-# Voice transcription (mic upload -> WAV conversion -> Deepgram STT)
-# deepgram-sdk is already pinned above (semantic analysis); these are the extra bits:
-pydub==0.25.1               # WebM/Opus -> WAV (shells out to ffmpeg)
-python-multipart==0.0.32   # FastAPI file uploads
-
 # Testing
 pytest>=9.0
