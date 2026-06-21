@@ -122,6 +122,32 @@ from model.src.final_scoring import on_sensor_update, on_voice_update
 - [ ] ESP32 loader
 - [ ] FastAPI endpoints connected to ML functions
 
+## Ethical Considerations
+
+Shift-Guard was designed for high-stress workplaces where fatigue detection can improve safety, but it can also create real risks if it is treated like a surveillance tool. We addressed those risks with a local-first, opt-in architecture and clear limits on what the system records, stores, and decides.
+
+### Privacy & Security
+- We avoided ambient always-on recording. Voice capture only happens through an explicit check-in flow, so the microphone is not continuously collecting audio in the background.
+- Raw voice data is treated as transient input. It is transcribed, converted into features or scores, and not kept as a persistent audio archive.
+- Sensor data is reduced into fixed windows and model features rather than being exposed as open-ended personal telemetry.
+- Sensitive configuration is handled through environment variables and local settings rather than hard-coded secrets.
+
+### Social Impact
+- The project is positioned as a support and safety aid, not as a disciplinary monitoring system.
+- Model outputs are framed as risk signals and recommendations, which keeps a human in the loop for any operational response.
+- Per-subject normalization and calibration reduce the chance that one person's baseline is incorrectly treated as another person's abnormal state.
+- The design acknowledges the risk of false positives, stigmatization, and over-trust in AI, so the output is intended to inform review rather than make autonomous decisions.
+
+### Environmental Impact
+- The system uses lightweight classical ML for the core fatigue model instead of requiring a large foundation model for every prediction.
+- We export the model to ONNX for efficient cross-platform inference, which helps keep deployment and runtime costs lower.
+- Where possible, the workflow reuses cached or local artifacts instead of reprocessing or retraining from scratch on every run.
+
+### Accountability
+- The pipeline is modular and testable, so each stage can be validated independently.
+- The model contract is explicit, which makes it easier to audit the inputs, outputs, and assumptions behind a prediction.
+- The output is a recommendation layer, not an automated enforcement mechanism, so supervisors or clinicians retain responsibility for final action.
+
 ---
 
 ## Team Ownership
