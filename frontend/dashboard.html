@@ -717,6 +717,28 @@
         let hrChart = null;
         let tempChart = null;
 
+        // ---- Intervention audio (edge-triggered on the 2s poll) ----------------
+        // Play the stress-relief clip ONCE each time risk climbs into a higher band
+        // (none -> elevated -> high). Re-arms automatically when it drops back down.
+        // Browsers block autoplay until a user gesture, so we only fire once the user
+        // has interacted (the Voice Journal click sets audioUnlocked = true).
+        const INTERVENTION_RANK = { none: 0, elevated: 1, high: 2 };
+        let lastInterventionRank = 0;
+        let audioUnlocked = false;
+        function maybePlayIntervention(iv) {
+            // Wait for a user gesture before arming — and crucially, do NOT advance
+            // lastInterventionRank while locked, or a pre-existing HIGH would consume
+            // the edge silently and we'd never fire once unlocked.
+            if (!iv || !audioUnlocked) return;
+            const rank = INTERVENTION_RANK[iv.level] ?? 0;
+            if (rank > lastInterventionRank && iv.audio_url) {
+                console.log(`[intervention] playing ${iv.level} clip`);
+                new Audio(iv.audio_url).play()
+                    .catch(e => console.warn('intervention audio blocked:', e));
+            }
+            lastInterventionRank = rank;   // track so it re-arms on the way back down
+        }
+
         async function fetchDashboard() {
             const response = await fetch('http://localhost:8000/dashboard');
             const data = await response.json();
@@ -757,6 +779,9 @@
             const songLink = document.getElementById('songLink');
             songLink.href = data.song.url;
             document.getElementById('songText').textContent = `${data.song.name} — ${data.song.artist}`;
+
+            // Play the spoken intervention if risk just crossed into a higher band.
+            maybePlayIntervention(data.intervention);
         }
 
         // True from the moment you start recording until the transcript returns.
@@ -850,6 +875,7 @@
 
         async function toggleRecording() {
             const btn = document.getElementById('recordBtn');
+            audioUnlocked = true;   // user gesture — now poll-driven intervention audio may autoplay
             if (streaming) { await stopStreaming(); return; }
 
             try {

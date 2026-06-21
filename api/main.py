@@ -56,6 +56,17 @@ except Exception as e:
     get_semantic_score = None
     print(f"[WARN] semantic_analysis unavailable ({e}); voice will not move the risk")
 
+# ========== INTERVENTION AUDIO ==========
+# Pre-generated spoken stress-relief clips (model/src/tts.py). We reuse tts.py
+# (lightweight — no torch/soundfile) for the clip paths + message text rather than
+# importing final_scoring, which fails on this env (missing soundfile via tone_analysis).
+try:
+    from tts import intervention_audio_path, INTERVENTION_TEXTS
+    print("[OK] tts intervention audio loaded")
+except Exception as e:
+    intervention_audio_path, INTERVENTION_TEXTS = None, {}
+    print(f"[WARN] tts unavailable ({e}); intervention audio disabled")
+
 # Risk blend weights — mirror final_scoring.py / INTEGRATION.md (0.7 sensor, 0.3 voice).
 SENSOR_WEIGHT = 0.7
 VOICE_WEIGHT = 0.3
@@ -122,6 +133,30 @@ def blend_risk(sensor: float, voice: float) -> float:
         risk = max(risk, VOICE_OVERRIDE_FLOOR)
     return risk
 
+
+# Intervention tiers — mirror final_scoring._INTERVENTION_MESSAGES (most → least severe).
+# A risk in [0.60, 0.80) plays the "elevated" clip; >= 0.80 plays the "high" clip.
+INTERVENTION_TIERS = [(0.80, "high"), (0.60, "elevated")]
+
+
+class Intervention(BaseModel):
+    level: str                      # "none" | "elevated" | "high"
+    text: Optional[str] = None      # spoken message (also shown on screen)
+    audio_url: Optional[str] = None # GET endpoint for the .wav, or None
+
+
+def intervention_for(risk: float) -> Intervention:
+    """Map a 0-1 risk score to the intervention tier whose clip should play."""
+    for threshold, key in INTERVENTION_TIERS:
+        if risk >= threshold:
+            return Intervention(
+                level=key,
+                text=INTERVENTION_TEXTS.get(key),
+                audio_url=f"/intervention-audio/{key}",
+            )
+    return Intervention(level="none")
+
+
 app = FastAPI(title="ShiftGuard API", version="3.0.0")
 
 app.add_middleware(
@@ -158,6 +193,7 @@ class DashboardResponse(BaseModel):
     contributors: Contributors
     recommendation: str
     song: Song
+    intervention: Intervention
 
 
 class TranscriptResponse(BaseModel):
@@ -382,6 +418,7 @@ async def get_dashboard():
         contributors=build_contributors(heart_rate, temperature),
         recommendation=recommendation,
         song=song,
+        intervention=intervention_for(risk),
     )
 
 
@@ -538,6 +575,23 @@ async def serve_worklet():
         os.path.join(BASE_DIR, "frontend", "pcm-worklet.js"),
         media_type="application/javascript",
     )
+
+
+@app.get("/intervention-audio/{level}")
+async def intervention_audio(level: str):
+    """Serve the pre-generated stress-relief clip for an intervention tier.
+
+    The dashboard plays this when the risk crosses into the elevated/high band.
+    """
+    if intervention_audio_path is None or level not in ("high", "elevated"):
+        raise HTTPException(status_code=404, detail="unknown intervention level")
+    path = intervention_audio_path(level)
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="intervention audio not generated; run: python model/src/tts.py",
+        )
+    return FileResponse(str(path), media_type="audio/wav")
 
 
 @app.websocket("/ws/transcribe")
