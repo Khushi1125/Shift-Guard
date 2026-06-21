@@ -1,6 +1,8 @@
 # Code file to bridge the gap between heart rate and temperature data streamed in from Arduino
 # and the AI model determining stress presence based on the data.
 
+from collections import deque
+import numpy as np
 import serial
 import serial.tools.list_ports
 import requests
@@ -8,7 +10,6 @@ import time
 import csv
 import os
 from datetime import datetime
-from model import predict
 from dotenv import load_dotenv
 load_dotenv()
 from final_scoring import on_sensor_update
@@ -77,7 +78,7 @@ def init_csv():
     if not os.path.exists(CSV_FILE):
         with open(CSV_FILE, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["timestamp", "bpm", "temp_c", "risk_score"])
+            writer.writerow(["timestamp", "bpm", "temp_c", "final_score"])
 
 def log_to_csv(bpm, temp_c, risk):
     with open(CSV_FILE, "a", newline="") as f:
@@ -127,7 +128,7 @@ def main():
         
             # Run the model
             result = on_sensor_update(bpm_mean, temp_mean, bpm_std, temp_slope)
-            risk = result["risk_score"]
+            risk = result["final_score"]
 
             print(f"BPM: {bpm}  Temp: {temp_c}°C  →  Risk: {risk:.2f}")
 
