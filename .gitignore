@@ -47,3 +47,6 @@ htmlcov/
 # ── Temporary reorganization files ───────────────────────────────────────────
 STRUCTURE_SUMMARY.txt
 REORGANIZATION_COMPLETE.md
+
+# Voice recordings (mic uploads + converted WAVs)
+recordings/

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Burnout Detection Dashboard</title>
+    <title>Armlet by Crimson Health</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -106,6 +106,87 @@
 
         .refresh-btn:active {
             transform: translateY(0);
+        }
+
+        /* Record Voice button — primary full-width action.
+           Emerald idle, red + pulsing while capturing. The dashboard auto-polls
+           every 2s, so there's no separate manual refresh button. */
+        .record-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--color-success) 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-family: 'Rubik', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Inline SVG icon inside the button — sized in em so it scales with text */
+        .btn-icon {
+            width: 1.15em;
+            height: 1.15em;
+            flex-shrink: 0;
+        }
+
+        #recordIcon {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Spinner shown while the recording uploads + Deepgram transcribes */
+        .btn-spinner {
+            width: 1em;
+            height: 1em;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: #FFFFFF;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .record-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .record-btn:active {
+            transform: translateY(0);
+        }
+
+        .record-btn.recording {
+            background: linear-gradient(135deg, var(--color-danger) 0%, #DC2626 100%);
+            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+            animation: pulse-badge 1.5s ease-in-out infinite;
+        }
+
+        .record-btn.processing {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* Small live red dot shown inside the button while recording */
+        .rec-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #FFFFFF;
+            box-shadow: 0 0 8px #FFFFFF;
+            animation: pulse-dot 1s ease-in-out infinite;
         }
 
         /* Grid Layout */
@@ -234,6 +315,16 @@
             background: var(--color-danger);
             color: white;
             animation: pulse-badge 2.5s ease-in-out infinite;
+        }
+
+        /* MEDIUM risk — amber, between clear and at-risk */
+        .risk-warn .risk-score-value {
+            color: var(--color-warning);
+        }
+
+        .risk-warn .risk-level-badge {
+            background: var(--color-warning);
+            color: white;
         }
 
         @keyframes pulse {
@@ -511,9 +602,20 @@
 
 <body>
     <div class="container">
-        <h1>Burnout Detection</h1>
+        <h1 style="margin-bottom: 2px;">Armlet</h1>
+        <p style="text-align: center; margin-bottom: 12px; color: var(--text-muted); font-family: 'Rubik', sans-serif; font-weight: 600; font-size: 0.7em; letter-spacing: 0.12em; text-transform: uppercase;">by Crimson Health</p>
 
-        <button class="refresh-btn" onclick="refreshDashboard()">Refresh Dashboard</button>
+        <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+            <span id="recordIcon">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </span>
+            <span id="recordLabel">Voice Journal</span>
+        </button>
 
         <div class="dashboard-grid">
             <!-- Risk Score Card -->
@@ -553,7 +655,7 @@
             <div class="card">
                 <div class="card-title">Latest Transcript</div>
                 <div class="transcript-quote" id="transcript">
-                    "Loading transcript..."
+                    Press “Voice Journal” to check in…
                 </div>
                 <div class="metrics-grid">
                     <div class="metric-box">
@@ -599,12 +701,8 @@
                         <span class="status-name">Dashboard</span>
                     </div>
                     <div class="status-item">
-                        <div class="status-indicator status-warning"></div>
-                        <span class="status-name">ESP32</span>
-                    </div>
-                    <div class="status-item">
                         <div class="status-indicator status-online"></div>
-                        <span class="status-name">QNX</span>
+                        <span class="status-name">ESP32</span>
                     </div>
                     <div class="status-item">
                         <div class="status-indicator status-online"></div>
@@ -623,29 +721,33 @@
             const response = await fetch('http://localhost:8000/dashboard');
             const data = await response.json();
 
-            const atRisk = data.risk === 1;
+            // Risk is a float 0-1 with a HIGH/MEDIUM/LOW label. Drive the card
+            // color + badge off the label so a high score reads red, not green.
+            const label = data.risk_label;                       // "HIGH" | "MEDIUM" | "LOW"
+            const riskClass = label === 'HIGH' ? 'risk-yes'
+                            : label === 'MEDIUM' ? 'risk-warn'
+                            : 'risk-no';
+            const badge = label === 'HIGH' ? 'AT RISK'
+                        : label === 'MEDIUM' ? 'ELEVATED'
+                        : 'CLEAR';
             const riskScoreCard = document.getElementById('riskScoreCard');
-            riskScoreCard.className = `card risk-score-card risk-${atRisk ? 'yes' : 'no'}`;
+            riskScoreCard.className = `card risk-score-card ${riskClass}`;
 
-            document.getElementById('riskScore').textContent = data.risk_label;     // "YES" / "NO"
-            document.getElementById('riskLevel').textContent = atRisk ? 'AT RISK' : 'CLEAR';
+            document.getElementById('riskScore').textContent = label;       // HIGH / MEDIUM / LOW
+            document.getElementById('riskLevel').textContent = badge;
 
             const contributorsHTML = `
                 <div class="contributor-item">
+                    <span class="contributor-name">Heart Rate</span>
+                    <span class="contributor-value">${data.contributors.heart_rate} bpm</span>
+                </div>
+                <div class="contributor-item">
+                    <span class="contributor-name">Temperature</span>
+                    <span class="contributor-value">${data.contributors.temperature}°C</span>
+                </div>
+                <div class="contributor-item">
                     <span class="contributor-name">Voice Fatigue</span>
-                    <span class="contributor-value">+${data.contributors.voice_fatigue}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">Movement Drift</span>
-                    <span class="contributor-value">+${data.contributors.movement_drift}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">HRV</span>
-                    <span class="contributor-value">+${data.contributors.hrv}</span>
-                </div>
-                <div class="contributor-item">
-                    <span class="contributor-name">Shift Duration</span>
-                    <span class="contributor-value">+${data.contributors.shift_duration}</span>
+                    <span class="contributor-value">${data.contributors.voice_fatigue}/100</span>
                 </div>
             `;
             document.getElementById('contributors').innerHTML = contributorsHTML;
@@ -657,13 +759,172 @@
             document.getElementById('songText').textContent = `${data.song.name} — ${data.song.artist}`;
         }
 
+        // True from the moment you start recording until the transcript returns.
+        // While it's true the 2s poll must NOT touch the card, or the loading
+        // state would get clobbered every tick.
+        let voiceBusy = false;
+
+        // Put the transcript card into a loading look: dim it, show the live
+        // status as the quote, and swap the metric values for a placeholder.
+        function setTranscriptLoading(message) {
+            document.getElementById('transcript').classList.add('loading');
+            document.getElementById('transcript').textContent = message;
+            document.getElementById('speechRate').textContent = '…';
+            document.getElementById('fatigueScore').textContent = '…';
+        }
+
+        // Single place that writes the transcript card, so the 2s poll and the
+        // live recording path render identically.
+        function renderTranscript(data) {
+            // Recording/transcribing in progress — leave the loading state alone.
+            if (voiceBusy) return;
+
+            const quoteEl = document.getElementById('transcript');
+            const rateEl  = document.getElementById('speechRate');
+            const fatEl   = document.getElementById('fatigueScore');
+
+            // No real transcript yet. The backend sends transcript="" until you
+            // record, so the 2s poll lands here every tick BEFORE a check-in.
+            // Idle state (option a): prompt the user, blank the metrics.
+            if (!data.transcript) {
+                quoteEl.classList.remove('loading');
+                quoteEl.textContent = 'Press “Voice Journal” to check in…';
+                rateEl.textContent  = '--';
+                fatEl.textContent   = '--';
+                return;
+            }
+
+            // Real transcript from /transcribe — render it and leave it put.
+            quoteEl.classList.remove('loading');
+            quoteEl.textContent = `"${data.transcript}"`;
+            rateEl.textContent  = data.speech_rate;
+            fatEl.textContent   = data.acoustic_fatigue;
+        }
+
         async function fetchTranscript() {
             const response = await fetch('http://localhost:8000/latest-transcript');
             const data = await response.json();
+            renderTranscript(data);
+        }
 
-            document.getElementById('transcript').textContent = `"${data.transcript}"`;
-            document.getElementById('speechRate').textContent = data.speech_rate;
-            document.getElementById('fatigueScore').textContent = data.acoustic_fatigue;
+        // ---- Voice recording (MediaRecorder) ----------------------------------
+        // Click once to start capturing the mic, click again to stop. On stop we
+        // bundle the WebM/Opus chunks into a Blob and POST it to /transcribe, which
+        // converts to WAV and runs Deepgram. The transcript card shows the result.
+        let mediaRecorder = null;   // held across the two clicks
+        let audioChunks = [];
+
+        // Icon markup reused when resetting the button (no emoji — inline SVG/CSS).
+        const MIC_SVG = `<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>`;
+        const REC_DOT = '<span class="rec-dot"></span>';
+        const SPINNER = '<span class="btn-spinner"></span>';
+
+        // ---- Live streaming voice (WebSocket → Deepgram relay) ----------------
+        // Click once: open the WS, capture the mic at 16 kHz via an AudioWorklet,
+        // stream PCM frames to the backend (which relays to Deepgram live) and
+        // render interim captions as they arrive. Click again: stop, the backend
+        // scores the full transcript and pushes the new risk back instantly.
+        let voiceWS = null, audioCtx = null, micStream = null, workletNode = null;
+        let streaming = false, finalCaption = '';
+
+        // Update the risk card from a HIGH/MEDIUM/LOW label (shared by poll + WS push).
+        function applyRisk(label) {
+            const riskClass = label === 'HIGH' ? 'risk-yes' : label === 'MEDIUM' ? 'risk-warn' : 'risk-no';
+            const badge = label === 'HIGH' ? 'AT RISK' : label === 'MEDIUM' ? 'ELEVATED' : 'CLEAR';
+            document.getElementById('riskScoreCard').className = `card risk-score-card ${riskClass}`;
+            document.getElementById('riskScore').textContent = label;
+            document.getElementById('riskLevel').textContent = badge;
+        }
+
+        function resetRecordBtn() {
+            const btn = document.getElementById('recordBtn');
+            btn.classList.remove('processing', 'recording');
+            document.getElementById('recordIcon').innerHTML = MIC_SVG;
+            document.getElementById('recordLabel').textContent = 'Voice Journal';
+        }
+
+        async function toggleRecording() {
+            const btn = document.getElementById('recordBtn');
+            if (streaming) { await stopStreaming(); return; }
+
+            try {
+                // 1. Open the relay WebSocket and wire up live captions + risk push.
+                finalCaption = '';
+                voiceWS = new WebSocket(`ws://${location.host}/ws/transcribe`);
+                voiceWS.onmessage = (e) => {
+                    const msg = JSON.parse(e.data);
+                    if (msg.type === 'transcript') {
+                        if (msg.is_final) finalCaption = (finalCaption + ' ' + msg.text).trim();
+                        const live = msg.is_final ? finalCaption : (finalCaption + ' ' + msg.text).trim();
+                        document.getElementById('transcript').classList.remove('loading');
+                        document.getElementById('transcript').textContent = live ? `"${live}…"` : 'Listening…';
+                    } else if (msg.type === 'risk') {
+                        applyRisk(msg.risk_label);                 // instant — no 2s wait
+                        if (msg.transcript) document.getElementById('transcript').textContent = `"${msg.transcript}"`;
+                    } else if (msg.type === 'error') {
+                        alert(msg.message);
+                    }
+                };
+                await new Promise((res, rej) => { voiceWS.onopen = res; voiceWS.onerror = rej; });
+
+                // 2. Capture mic at 16 kHz and stream PCM frames over the WS.
+                audioCtx = new AudioContext({ sampleRate: 16000 });
+                await audioCtx.audioWorklet.addModule('/pcm-worklet.js');
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const src = audioCtx.createMediaStreamSource(micStream);
+                workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
+                workletNode.port.onmessage = (ev) => {
+                    if (voiceWS && voiceWS.readyState === WebSocket.OPEN) voiceWS.send(ev.data);
+                };
+                src.connect(workletNode);
+
+                streaming = true;
+                voiceBusy = true;                       // freeze the poll's transcript writes
+                setTranscriptLoading('Listening…');
+                btn.classList.add('recording');
+                document.getElementById('recordIcon').innerHTML = REC_DOT;
+                document.getElementById('recordLabel').textContent = 'Stop';
+            } catch (err) {
+                alert('Could not start streaming: ' + err.message);
+                cleanupStreaming();
+            }
+        }
+
+        async function stopStreaming() {
+            streaming = false;
+            const btn = document.getElementById('recordBtn');
+            btn.classList.remove('recording');
+            btn.classList.add('processing');
+            document.getElementById('recordIcon').innerHTML = SPINNER;
+            document.getElementById('recordLabel').textContent = 'Scoring…';
+
+            // Stop mic + audio graph, then tell the backend to finalize.
+            try { micStream && micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            try { workletNode && workletNode.disconnect(); } catch (e) {}
+            try { audioCtx && await audioCtx.close(); } catch (e) {}
+            if (voiceWS && voiceWS.readyState === WebSocket.OPEN) voiceWS.send('stop');
+
+            // Backend replies {type:'risk'} then closes; reset the button on close.
+            if (voiceWS) {
+                voiceWS.onclose = () => { voiceBusy = false; resetRecordBtn(); };
+                setTimeout(() => { voiceBusy = false; resetRecordBtn(); }, 6000);  // safety
+            } else {
+                voiceBusy = false; resetRecordBtn();
+            }
+        }
+
+        function cleanupStreaming() {
+            try { micStream && micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            try { workletNode && workletNode.disconnect(); } catch (e) {}
+            try { audioCtx && audioCtx.close(); } catch (e) {}
+            try { voiceWS && voiceWS.close(); } catch (e) {}
+            streaming = false; voiceBusy = false;
+            resetRecordBtn();
         }
 
         // Build or update a single line chart. Returns the chart instance so the
@@ -764,15 +1025,28 @@
             });
         }
 
+        // Risk + recommendation are presented as conclusions drawn FROM the voice
+        // check-in, so they wait on the transcript: show a loading look until the
+        // transcript has been fetched, then fetchDashboard() reveals them.
+        function setRiskRecLoading() {
+            const riskScoreCard = document.getElementById('riskScoreCard');
+            riskScoreCard.className = 'card risk-score-card';   // neutral (drop yes/no color)
+            document.getElementById('riskScore').textContent = '…';
+            document.getElementById('riskLevel').textContent = 'LOADING';
+            document.getElementById('recommendation').textContent = 'Analyzing voice check-in…';
+        }
+
         async function refreshDashboard() {
             const btn = document.querySelector('.refresh-btn');
             btn.classList.add('loading');
             btn.textContent = 'Refreshing...';
 
-            // Fetch dashboard first to update state, then fetch history/transcript
-            await fetchDashboard();
+            // Transcript first, with risk + recommendation showing "loading"; then
+            // reveal them once the transcript is in.
+            setRiskRecLoading();
+            await fetchTranscript();
             await Promise.all([
-                fetchTranscript(),
+                fetchDashboard(),   // reveals risk + recommendation
                 fetchHistory()
             ]);
 
@@ -780,15 +1054,17 @@
             btn.textContent = 'Refresh Dashboard';
         }
 
-        // Quiet poll used by the interval: advances the sliding window without
-        // touching the button label (so it doesn't flicker every tick).
+        // Quiet poll used by the interval: same transcript-first order, but no
+        // loading reset so the live values update smoothly without flickering.
         async function tick() {
-            await fetchDashboard();
-            await Promise.all([fetchTranscript(), fetchHistory()]);
+            await fetchTranscript();
+            await Promise.all([fetchDashboard(), fetchHistory()]);
         }
 
-        refreshDashboard();
-        setInterval(tick, 2000);   // each tick records a new reading -> window slides
+        // Swallow transient fetch errors (e.g. server still starting) so they
+        // don't surface as uncaught promise rejections in the console.
+        refreshDashboard().catch(() => {});
+        setInterval(() => tick().catch(() => {}), 2000);   // each tick slides the window
     </script>
 </body>
 
