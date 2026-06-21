@@ -103,7 +103,7 @@ def main():
             temp_c = float(temp_str)
 
             # Run the Random Forest model
-            risk = predict(bpm, temp_c)
+            risk = float(predict(bpm, temp_c))
 
             print(f"BPM: {bpm}  Temp: {temp_c}°C  →  Risk: {risk:.2f}")
 
