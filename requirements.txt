@@ -3,7 +3,7 @@
 
 # Core data / ML
 numpy==2.4.6
-pandas==3.0.3
+pandas>=2.0.0,<3.0.0
 scipy==1.17.1
 scikit-learn==1.9.0
 matplotlib==3.11.0
@@ -43,6 +43,7 @@ arize==8.2.0
 # Voice transcription (mic upload -> WAV conversion -> Deepgram STT)
 # deepgram-sdk is already pinned above (semantic analysis); these are the extra bits:
 pydub==0.25.1               # WebM/Opus -> WAV (shells out to ffmpeg)
+audioop-lts                   # Python 3.13 audioop compatibility fix
 python-multipart==0.0.32   # FastAPI file uploads
 
 # Testing
