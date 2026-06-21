@@ -23,7 +23,9 @@ Shift-Guard/
 │   ├── features_30s.csv      # modeling-ready feature table
 │   ├── e4_captured.pkl       # all E4 signals captured from the zips (large)
 │   ├── e4_capture_summary.csv
-│   └── rf_baseline.joblib    # trained baseline model + metadata
+│   ├── rf_baseline.joblib    # trained baseline model + metadata
+│   ├── rf_baseline.pkl       # same artifact as a plain pickle
+│   └── baseline_model.onnx   # ONNX export for cross-platform inference
 ├── docs/
 │   └── SCHEMA.md             # data dictionary: every signal and feature explained
 ├── requirements.txt

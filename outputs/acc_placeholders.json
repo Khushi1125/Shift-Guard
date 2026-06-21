@@ -1,0 +1,42 @@
+{
+  "feature_means": {
+    "acc_mag_mean": 63.67478215823358,
+    "acc_mag_std": 2.6152280792889937,
+    "acc_hf_mean": 1.2831891922965726,
+    "bvp_mean": -0.0022037570224719143,
+    "bvp_std": 51.79108321023914,
+    "hr_mean": 83.92225232068817,
+    "hr_std": 6.070678667426152,
+    "hr_slope": -0.011228099219711591,
+    "hr_min": 73.5996290054902,
+    "hr_max": 94.70044977807112,
+    "temp_mean": 33.094394662921346,
+    "temp_slope": -4.9686658952276655e-06,
+    "temp_delta": -0.0005730337078651443,
+    "eda_mean": 2.0779311484503746,
+    "eda_std": 0.04780796516123271,
+    "eda_slope": -0.00012194318902646358,
+    "eda_min": 1.974581896067416,
+    "eda_max": 2.183776691573034
+  },
+  "model_feature_order": [
+    "acc_mag_mean",
+    "acc_mag_std",
+    "acc_hf_mean",
+    "bvp_mean",
+    "bvp_std",
+    "hr_mean",
+    "hr_std",
+    "hr_slope",
+    "hr_min",
+    "hr_max",
+    "temp_mean",
+    "temp_slope",
+    "temp_delta",
+    "eda_mean",
+    "eda_std",
+    "eda_slope",
+    "eda_min",
+    "eda_max"
+  ]
+}

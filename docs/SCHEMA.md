@@ -178,3 +178,22 @@ A dict saved with `joblib`:
 **Inference reminder:** windows fed to the model must be normalized the same way —
 collect a short calm baseline per user, store that user's mean/std, then z-score
 live windows against it before calling `model.predict`.
+
+## 8. ONNX model — `outputs/baseline_model.onnx`
+
+The same Random Forest exported to ONNX for cross-platform / edge inference (C++,
+mobile, browser, embedded) via ONNX Runtime.
+
+| Input | Shape | Type | Notes |
+|-------|-------|------|-------|
+| `float_input` | `[N, 18]` | float32 | 18 features, **per-subject z-scored** (same order as `feature_cols`) |
+
+| Output | Shape | Type | Meaning |
+|--------|-------|------|---------|
+| `label` | `[N]` | int64 | Predicted class (0 = calm, 1 = stressed) |
+| `probabilities` | `[N, 2]` | float32 | `[P(calm), P(stressed)]` — use column 1 as the stress score |
+
+> The export repairs a known skl2onnx 1.20.0 bug (binary RandomForest leaf weights
+> were all assigned to class 0, producing negative probabilities). After the fix,
+> ONNX matches sklearn to ~2e-7 on probabilities and 100% on labels. See the
+> export cell in `notebooks/baseline.ipynb`.
