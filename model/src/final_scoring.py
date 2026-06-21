@@ -334,10 +334,40 @@ def compute_final_risk_score(sensor_proba: float, combined_voice: float) -> dict
 
 _INTERVENTION_MESSAGES = [
     # Ordered most → least severe; first matching threshold wins.
-    # (threshold, text)
-    (0.80, "Your stress level is quite high right now. Consider stepping away for 5 minutes — a short walk or a few deep breaths can help reset your nervous system."),
-    (0.60, "You're showing signs of elevated stress. Try a brief grounding exercise: name 5 things you can see, 4 you can hear, 3 you can touch."),
+    # (threshold, key, text)
+    # The "key" links each message to its pre-generated TTS clip in
+    # model/outputs/intervention_<key>.wav (see tts.INTERVENTION_TEXTS — keep the
+    # text in both files in sync).
+    (0.80, "high",     "Your stress level is quite high right now. Consider stepping away for 5 minutes — a short walk or a few deep breaths can help reset your nervous system."),
+    (0.60, "elevated", "You're showing signs of elevated stress. Try a brief grounding exercise: name 5 things you can see, 4 you can hear, 3 you can touch."),
 ]
+
+
+def _get_intervention_audio(key: str, text: str) -> str | None:
+    """Return a playable .wav path for an intervention, or None if unavailable.
+
+    Uses the pre-generated clip in model/outputs/ when present.  If it's missing
+    (e.g. tts.py was never run), it attempts a one-time live synthesis and
+    caches the result.  Any failure (no key, no network) returns None so the
+    caller falls back to text-only — TTS is a nice-to-have, never a blocker.
+    """
+    try:
+        from tts import intervention_audio_path, synthesize_speech
+
+        dest = intervention_audio_path(key)
+        if dest.exists():
+            return str(dest)
+
+        # Lazy fallback: synthesize once and cache.  Returns "" on failure.
+        path = synthesize_speech(text, str(dest))
+        return path or None
+
+    except Exception as exc:
+        logger.warning(
+            "Could not obtain intervention audio for %r: %s: %s",
+            key, type(exc).__name__, exc,
+        )
+        return None
 
 
 def check_and_get_intervention(final_score: float) -> dict:
@@ -359,14 +389,17 @@ def check_and_get_intervention(final_score: float) -> dict:
         triggered   (bool)      — True if the score is high enough to show an alert.
         text        (str|None)  — The intervention message to display, or None if
                                   no intervention is needed.
-        audio_path  (str|None)  — Reserved for a future TTS audio file path.
-                                  Always None in the current release.
+        audio_path  (str|None)  — Path to a spoken .wav of the message (Deepgram
+                                  TTS), ready to play in the browser.  None when
+                                  no intervention fires or audio can't be made
+                                  (in which case fall back to showing `text`).
     """
     try:
         score = float(final_score)
-        for threshold, message in _INTERVENTION_MESSAGES:
+        for threshold, key, message in _INTERVENTION_MESSAGES:
             if score >= threshold:
-                return {"triggered": True, "text": message, "audio_path": None}
+                audio_path = _get_intervention_audio(key, message)
+                return {"triggered": True, "text": message, "audio_path": audio_path}
         return {"triggered": False, "text": None, "audio_path": None}
 
     except Exception as exc:
