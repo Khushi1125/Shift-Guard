@@ -1,77 +1,139 @@
-# Shift-Guard — Early Burnout Detection for First Responders & Caregivers
+# Shift-Guard: Worker Fatigue Detection System
 
-Shift-Guard is a wrist-worn early-stress / burnout detector. It reads four
-physiological signals from a wristband, and classifies short windows of data as
-**calm** or **stressed** in real time. This repo contains the data analysis,
-feature engineering, and a Random Forest baseline model, trained on the public
-[WESAD](https://ubicomp.eti.uni-siegen.de/home/datasets/icmi18/) dataset (which
-was recorded on the same Empatica E4 sensors as the hardware prototype).
+AI-powered fatigue detection for healthcare workers using sensor data and voice analysis.
 
-## Repository layout
+---
+
+## Project Structure
 
 ```
 Shift-Guard/
-├── data/
-│   └── WESAD/                  # raw dataset (one folder per subject: S2, S3, …)
-├── notebooks/
-│   ├── EDA.ipynb              # exploratory analysis + feature export (Sections 1–11)
-│   └── baseline.ipynb        # Random Forest model + full evaluation suite
-├── src/
-│   ├── e4_loader.py          # reads the Empatica E4 zip archives (HR, IBI, …)
-│   └── extract_features.py   # builds the 30 s windowed feature table
-├── outputs/                  # generated artifacts (created by the code)
-│   ├── features_30s.csv      # modeling-ready feature table
-│   ├── e4_captured.pkl       # all E4 signals captured from the zips (large)
-│   ├── e4_capture_summary.csv
-│   ├── rf_baseline.joblib    # trained baseline model + metadata
-│   ├── rf_baseline.pkl       # same artifact as a plain pickle
-│   └── baseline_model.onnx   # ONNX export for cross-platform inference
-├── docs/
-│   └── SCHEMA.md             # data dictionary: every signal and feature explained
+├── pipeline/              # Data pipeline (Abby)
+│   ├── schemas.py         # Pydantic models (SensorReading, VoiceFeatures, ModelFeatures)
+│   ├── loaders.py         # WESAD/ESP32 data loaders
+│   ├── features.py        # Feature extraction
+│   └── windowing.py       # 30-second windowing
+│
+├── model/                 # ML model & EDA (Khushi)
+│   ├── notebooks/
+│   │   ├── EDA.ipynb              # Exploratory analysis + feature export
+│   │   └── baseline.ipynb         # Random Forest model + evaluation suite
+│   ├── src/
+│   │   ├── e4_loader.py           # Reads Empatica E4 zip archives
+│   │   ├── extract_features.py    # Builds 30 s windowed feature table
+│   │   ├── semantic_analysis.py   # Deepgram STT + VADER sentiment
+│   │   ├── tone_analysis.py       # Wav2Vec2 acoustic stress classifier
+│   │   ├── final_scoring.py       # Locked 4-function ML interface
+│   │   └── eval_semantic.py       # VADER evaluation script
+│   ├── outputs/
+│   │   ├── features_30s.csv       # Modeling-ready feature table
+│   │   ├── baseline_model.onnx    # ONNX export for cross-platform inference
+│   │   ├── rf_baseline.joblib     # Trained Random Forest + metadata
+│   │   ├── acc_placeholders.json  # Imputation values for missing sensor channels
+│   │   └── eval_semantic.json     # VADER evaluation results
+│   └── predict.py                 # Prediction entry point
+│
+├── api/                   # FastAPI backend
+│   └── main.py            # REST API endpoints
+│
+├── frontend/              # Dashboard UI
+│   └── dashboard.html     # Real-time monitoring dashboard
+│
+├── arduino/               # Hardware / Arduino
+│   └── main.ino
+│
+├── tests/                 # Test suite
+│   ├── test_schemas.py
+│   ├── test_phase1.py
+│   ├── test_full_integration.py   # ML pipeline integration test
+│   └── test_semantic_analysis.py
+│
+├── docs/                  # Documentation
+├── INTEGRATION.md         # ML function interface contract for backend
 ├── requirements.txt
-└── README.md
+└── venv/
 ```
 
-## Quick start
+---
 
+## Quick Start
+
+### Setup
 ```bash
-# 1. Install dependencies (a virtualenv is recommended)
-pip install -r requirements.txt jupyter
-
-# 2. (Optional) regenerate the feature table from the raw data
-python src/extract_features.py        # writes outputs/features_30s.csv
-
-# 3. (Optional) capture the E4 HR/IBI signals from the zip archives
-python src/e4_loader.py               # writes outputs/e4_captured.pkl
-
-# 4. Open the notebooks
-jupyter notebook notebooks/EDA.ipynb
-jupyter notebook notebooks/baseline.ipynb
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-The notebooks anchor their working directory to the project root automatically, so
-they can be launched from anywhere.
+### ML Pipeline (Khushi)
+```bash
+# Run full integration test (sensor + voice + final score)
+HF_HOME=.hf_cache python tests/test_full_integration.py
 
-## Pipeline overview
+# Smoke-test the scoring interface
+python model/src/final_scoring.py
+```
 
-1. **EDA.ipynb** — validates data quality, aligns labels, derives HR from BVP,
-   quantifies how strongly each signal separates calm vs stressed, and exports
-   `outputs/features_30s.csv`.
-2. **extract_features.py** — slices each subject's session into 30-second windows
-   (50% overlap), keeps only pure calm/stressed windows, and computes per-signal
-   features for ACC, BVP, HR (derived), TEMP and EDA.
-3. **baseline.ipynb** — trains a Random Forest with **Leave-One-Subject-Out**
-   cross-validation (the leakage-safe metric for a wearable) and reports accuracy,
-   precision/recall/F1, ROC-AUC, confusion matrix, feature importances, and an
-   overfitting analysis.
+### API Server
+```bash
+python -m api.main
+# Visit: http://localhost:8000/docs
+```
 
-## Baseline result (Leave-One-Subject-Out)
+### Dashboard
+```bash
+open frontend/dashboard.html
+```
 
-| Metric | Score |
-|--------|-------|
-| Accuracy | 0.905 |
-| F1 (stressed) | 0.866 |
-| ROC-AUC | 0.970 |
+---
 
-vs. a majority-class baseline of 0.64. See `docs/SCHEMA.md` for the full data
-dictionary and `notebooks/baseline.ipynb` for the complete evaluation.
+## ML Interface Contract
+
+The backend imports four stable functions from `model/src/final_scoring.py`.
+See **[INTEGRATION.md](INTEGRATION.md)** for the full contract.
+
+```python
+from model.src.final_scoring import (
+    predict_sensor_score,       # temp + HR → stress probability
+    run_voice_checkin,          # wav path → transcript + scores
+    compute_final_risk_score,   # sensor + voice → final_score dict
+    check_and_get_intervention, # final_score → intervention alert
+)
+
+# Stateful helpers (recommended for live use):
+from model.src.final_scoring import on_sensor_update, on_voice_update
+```
+
+---
+
+## Current Status
+
+### ✅ Phase 1 Complete — Schemas & ML pipeline
+- [x] `SensorReading`, `VoiceFeatures`, `ModelFeatures` schemas
+- [x] Random Forest baseline (F1 = 0.86, LOSO cross-validation on WESAD)
+- [x] ONNX export for cross-platform inference
+- [x] Semantic analysis (Deepgram + VADER)
+- [x] Tone analysis (Wav2Vec2 emotion model)
+- [x] Final scoring: stateful independent-clock combination logic
+- [x] All ML integration tests passing
+
+### 🔄 Phase 2 In Progress
+- [ ] WESAD loader (`pipeline/loaders.py`)
+- [ ] ESP32 loader
+- [ ] FastAPI endpoints connected to ML functions
+
+---
+
+## Team Ownership
+
+| Folder | Owner | Purpose |
+|--------|-------|---------|
+| `pipeline/` | Abby | Data pipeline & schemas |
+| `model/` | Khushi | ML model, EDA, scoring |
+| `api/` | Shared | FastAPI backend |
+| `frontend/` | Shared | Dashboard UI |
+| `arduino/` | Hardware team | Sensor firmware |
+
+---
+
+**Hackathon Project** | **Last Updated**: June 21, 2026

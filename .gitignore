@@ -26,3 +26,24 @@ outputs/e4_captured.pkl
 # by NOT ignoring them. Remove the lines below to ignore them too if preferred.
 # outputs/features_30s.csv
 # outputs/rf_baseline.joblib
+
+# ── API & Environment ─────────────────────────────────────────────────────────
+.env
+.env.local
+*.env
+api_keys.json
+secrets.json
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Test outputs ──────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# ── Temporary reorganization files ───────────────────────────────────────────
+STRUCTURE_SUMMARY.txt
+REORGANIZATION_COMPLETE.md
