@@ -54,7 +54,7 @@ def log_to_csv(bpm, temp_c, risk):
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 
 def main():
-    port = "/dev/cu.usbserial-0001"
+    port = "/dev/cu.usbserial-0001" # /dev/cu.usbserial-0001 Serial Port (USB)
     ser = serial.Serial(port, BAUD_RATE, timeout=2)
     time.sleep(2)  # wait for Arduino to reset after serial connection
 
