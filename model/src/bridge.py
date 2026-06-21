@@ -1,6 +1,8 @@
 # Code file to bridge the gap between heart rate and temperature data streamed in from Arduino
 # and the AI model determining stress presence based on the data.
 
+from collections import deque
+import numpy as np
 import serial
 import serial.tools.list_ports
 import requests
@@ -8,9 +10,9 @@ import time
 import csv
 import os
 from datetime import datetime
-from model import predict
 from dotenv import load_dotenv
 load_dotenv()
+from final_scoring import on_sensor_update
 
 # ARIZE CONFIG
 ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
@@ -27,6 +29,11 @@ BAUD_RATE = 115200
 # Optional: log all readings to a CSV file
 ENABLE_CSV_LOG = True
 CSV_FILE = "readings_log.csv"
+
+# buffers for 10 max readings
+WINDOW = 10
+bpm_buffer = deque(maxlen=WINDOW)
+temp_buffer = deque(maxlen=WINDOW)
 
 # ── AUTO-DETECT ARDUINO PORT ──────────────────────────────────────────────────
 
@@ -71,7 +78,7 @@ def init_csv():
     if not os.path.exists(CSV_FILE):
         with open(CSV_FILE, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["timestamp", "bpm", "temp_c", "risk_score"])
+            writer.writerow(["timestamp", "bpm", "temp_c", "final_score"])
 
 def log_to_csv(bpm, temp_c, risk):
     with open(CSV_FILE, "a", newline="") as f:
@@ -81,7 +88,8 @@ def log_to_csv(bpm, temp_c, risk):
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 
 def main():
-    port = "/dev/cu.usbserial-0001" # /dev/cu.usbserial-0001 Serial Port (USB)
+    # port = "/dev/cu.usbserial-0001" # /dev/cu.usbserial-0001 Serial Port (USB)
+    port = find_arduino_port()
     ser = serial.Serial(port, BAUD_RATE, timeout=2)
     time.sleep(2)  # wait for Arduino to reset after serial connection
 
@@ -90,20 +98,37 @@ def main():
     if ENABLE_CSV_LOG:
         init_csv()
 
+    raw = ""
     while True:
         try:
+            print("Waiting for data from Arduino...")
             # Read a line from Arduino e.g. "72,36.50"
-            raw = ser.readline().decode("utf-8").strip()
+            raw = ser.readline().decode("utf-8", errors="ignore").strip()
 
             if not raw or "," not in raw:
+                print("Skipping malformed data:", raw)
                 continue  # skip empty or malformed lines
 
             bpm_str, temp_str = raw.split(",")
             bpm = float(bpm_str)
             temp_c = float(temp_str)
 
-            # Run the Random Forest model
-            risk = float(predict(bpm, temp_c))
+            bpm_buffer.append(bpm)
+            temp_buffer.append(temp_c)
+
+            if len(bpm_buffer) < WINDOW:
+                print(f"  Buffering... {len(bpm_buffer)}/{WINDOW}")
+                continue
+
+            # calculate buffer statistics
+            bpm_mean  = float(np.mean(bpm_buffer))
+            bpm_std   = float(np.std(bpm_buffer))
+            temp_mean = float(np.mean(temp_buffer))
+            temp_slope = float(np.polyfit(range(WINDOW), list(temp_buffer), 1)[0])
+        
+            # Run the model
+            result = on_sensor_update(bpm_mean, temp_mean, bpm_std, temp_slope)
+            risk = result["final_score"]
 
             print(f"BPM: {bpm}  Temp: {temp_c}°C  →  Risk: {risk:.2f}")
 
