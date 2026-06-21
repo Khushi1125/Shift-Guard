@@ -1,0 +1,239 @@
+# Shift-Guard — Backend Integration Guide
+
+This document is for the backend/frontend teammate.  
+Import everything you need from one file: **`src/final_scoring.py`**.
+
+```python
+from final_scoring import (
+    predict_sensor_score,
+    run_voice_checkin,
+    compute_final_risk_score,
+    check_and_get_intervention,
+)
+```
+
+---
+
+## The Four Functions
+
+### 1. `predict_sensor_score`
+
+```python
+predict_sensor_score(
+    temp_mean:  float,   # skin temperature average, °C  (e.g. 36.2)
+    temp_slope: float,   # how fast temp is changing, °C/s  (e.g. -0.001)
+    bpm_mean:   float,   # average heart rate, BPM  (e.g. 88.0)
+    bpm_std:    float,   # heart rate variability, BPM  (e.g. 6.5)
+) -> float               # stress probability, 0.0 (calm) → 1.0 (stressed)
+```
+
+Runs the trained Random Forest sensor model on the four live wearable readings
+and returns a stress probability.  Accelerometer and EDA channels are not
+available in the live demo and are filled automatically with safe placeholder
+values — you do not need to pass them.
+
+**Call frequency:** Once per ~10-second sensor window.
+
+---
+
+### 2. `run_voice_checkin`
+
+```python
+run_voice_checkin(
+    wav_path: str,   # path to the .wav file saved from the browser upload
+) -> dict
+```
+
+Returns:
+```python
+{
+    "transcript":     str,    # what the user said (empty if API unavailable)
+    "semantic_score": float,  # VADER sentiment, −1.0 (very negative) → +1.0 (positive)
+    "tone_stress":    float,  # how stressed the voice sounds, 0.0 → 1.0
+    "combined_voice": float,  # blended voice stress score, 0.0 → 1.0
+}
+```
+
+Transcribes the audio via Deepgram, analyses the words (VADER sentiment) and
+the acoustic vocal quality (Wav2Vec2 emotion model), then blends them into a
+single voice stress score.
+
+**Call frequency:** Only when the user clicks the "Check In" button on the
+dashboard.  This function involves network latency (Deepgram API) and local
+ML inference (~1–3 s total).  Do **not** call it on a polling loop.
+
+**Audio source:** The browser captures audio via the laptop microphone using
+the MediaRecorder API.  The backend should save the uploaded audio blob as a
+`.wav` file and pass that file path here.
+
+---
+
+### 3. `compute_final_risk_score`
+
+```python
+compute_final_risk_score(
+    sensor_proba:   float,   # output of predict_sensor_score()
+    combined_voice: float,   # "combined_voice" from run_voice_checkin()
+) -> dict
+```
+
+Returns:
+```python
+{
+    "sensor_proba":   float,  # echoed back for logging/display
+    "combined_voice": float,  # echoed back for logging/display
+    "final_score":    float,  # 0.7 × sensor_proba + 0.3 × combined_voice
+}
+```
+
+Blends the sensor and voice signals into a single risk score.  The sensor
+model is weighted higher (0.7) because it was validated more rigorously
+(F1 = 0.86 on 15 subjects via Leave-One-Subject-Out cross-validation).
+
+**Call frequency:** Any time either `sensor_proba` or `combined_voice`
+updates.  This is pure arithmetic — no ML inference, negligible latency.
+
+---
+
+### 4. `check_and_get_intervention`
+
+```python
+check_and_get_intervention(
+    final_score: float,   # "final_score" from compute_final_risk_score()
+) -> dict
+```
+
+Returns:
+```python
+{
+    "triggered":  bool,       # True → show the alert on the dashboard
+    "text":       str | None, # intervention message to display (None if not triggered)
+    "audio_path": str | None, # reserved for future TTS — always None for now
+}
+```
+
+Decides whether the stress level is high enough to show a stress-relief
+intervention to the user.  Triggered when `final_score ≥ 0.65`.
+
+**Call frequency:** Any time `final_score` updates.  Pure logic, zero latency.
+
+---
+
+## Recommended Integration Pattern (stateful, independent clocks)
+
+Sensor and voice update on completely independent schedules.
+Use the two stateful helper functions — **`on_sensor_update`** and **`on_voice_update`** — so the ML layer manages the "most recent value of each" logic for you.
+You never need to track the last voice result yourself.
+
+```python
+import final_scoring as fs
+
+# ── At server startup — register your WebSocket push once ─────────────────
+# The callback receives the full result dict every time EITHER signal updates.
+fs.register_score_callback(lambda result: ws.send_json(result))
+# For async frameworks (FastAPI, etc.):
+# fs.register_score_callback(
+#     lambda result: asyncio.create_task(ws.send_json(result))
+# )
+
+# ── Every ~10 s (sensor polling loop) ─────────────────────────────────────
+# Combines with whatever voice value was most recently recorded.
+# Pushes updated final_score to dashboard immediately via the callback.
+fs.on_sensor_update(
+    temp_mean  = read_temp(),
+    temp_slope = compute_slope(temp_history),
+    bpm_mean   = read_bpm(),
+    bpm_std    = compute_std(bpm_history),
+)
+
+# ── Only when user clicks "Check In" ──────────────────────────────────────
+# Combines with whatever sensor value was most recently recorded.
+# Pushes updated final_score to dashboard immediately via the callback.
+fs.on_voice_update("/tmp/uploads/clip_<timestamp>.wav")
+```
+
+Both functions return the same full result dict in case you need it synchronously,
+but the callback is the primary mechanism for the dashboard push.
+
+### What the callback receives
+
+```python
+{
+    # from voice check-in (holds last known values between clicks)
+    "transcript":     str,
+    "semantic_score": float,   # VADER [-1, +1]
+    "tone_stress":    float,   # Wav2Vec2 [0, 1]
+    "combined_voice": float,   # blended voice stress [0, 1]
+
+    # from sensor model + blend
+    "sensor_proba":   float,   # ONNX RF [0, 1]
+    "final_score":    float,   # 0.7×sensor + 0.3×voice [0, 1]
+
+    # intervention decision
+    "alert": {
+        "triggered":  bool,
+        "text":       str | None,
+        "audio_path": None,        # reserved for TTS
+    }
+}
+```
+
+### Default values before first readings arrive
+
+| Signal | Default |
+|--------|---------|
+| `latest_sensor_proba` | 0.5 (neutral) |
+| `latest_voice_result["combined_voice"]` | 0.5 (neutral) |
+
+Voice value does **not** expire or reset between mic clicks — it holds steady
+at its last known value until the user checks in again.
+
+---
+
+## Risk Score Interpretation
+
+| `final_score` range | Risk level   | `check_and_get_intervention` |
+|---------------------|--------------|------------------------------|
+| 0.00 – 0.40         | Low / calm   | Not triggered                |
+| 0.40 – 0.60         | Borderline   | Not triggered                |
+| 0.60 – 0.80         | Elevated     | Triggered (grounding prompt) |
+| 0.80 – 1.00         | High         | Triggered (stronger prompt)  |
+
+---
+
+## Environment Setup
+
+Copy `.env.example` → `.env` and fill in your Deepgram API key:
+
+```
+DEEPGRAM_API_KEY=your_key_here
+```
+
+The functions read this automatically.  If the key is missing, `run_voice_checkin`
+will return an empty transcript but will not crash — the tone score still runs.
+
+---
+
+## Dependencies
+
+Install everything with:
+
+```bash
+pip install -r requirements.txt
+```
+
+The first call to `run_voice_checkin` downloads the Wav2Vec2 model weights
+(~380 MB, cached after the first run in `.hf_cache/`).  Allow a few seconds
+on the first request.
+
+---
+
+## Running the Integration Test
+
+```bash
+cd /path/to/Shift-Guard
+HF_HOME=.hf_cache python tests/test_full_integration.py
+```
+
+Expected: worst-case scenario scores meaningfully higher than best-case, and
+triggers the intervention alert while the best case does not.

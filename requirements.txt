@@ -1,7 +1,7 @@
 # Shift-Guard — Python dependencies
 # Install with:  pip install -r requirements.txt
-# (Jupyter is also needed to run the notebooks: pip install jupyter)
 
+# Core data / ML
 numpy==2.4.6
 pandas==3.0.3
 scipy==1.17.1
@@ -10,6 +10,28 @@ matplotlib==3.11.0
 seaborn==0.13.2
 joblib==1.5.3
 
+# ONNX export (model/notebooks/baseline.ipynb → model/outputs/baseline_model.onnx)
+onnx==1.22.0
+skl2onnx==1.20.0
+onnxruntime==1.27.0
+
+# Semantic analysis (model/src/semantic_analysis.py)
+deepgram-sdk==7.3.1
+vaderSentiment==3.3.2
+python-dotenv==1.2.2
+
+# Tone analysis (model/src/tone_analysis.py)
+torch
+torchaudio
+transformers
+huggingface_hub
+soundfile
+scipy
+
+# API / backend
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.0
+
+# Testing
+pytest>=9.0

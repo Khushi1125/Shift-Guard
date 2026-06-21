@@ -8,14 +8,30 @@ AI-powered fatigue detection for healthcare workers using sensor data and voice 
 
 ```
 Shift-Guard/
-├── pipeline/              # Data pipeline (Abby's code)
+├── pipeline/              # Data pipeline (Abby)
 │   ├── schemas.py         # Pydantic models (SensorReading, VoiceFeatures, ModelFeatures)
-│   ├── loaders.py         # Phase 2: WESAD/ESP32 data loaders (TODO)
-│   ├── features.py        # Phase 3: Feature extraction (TODO)
-│   └── windowing.py       # Phase 3: 30-second windowing (TODO)
+│   ├── loaders.py         # WESAD/ESP32 data loaders
+│   ├── features.py        # Feature extraction
+│   └── windowing.py       # 30-second windowing
 │
-├── model/                 # ML model & EDA (Friend's code)
-│   └── (Drop your ML code here)
+├── model/                 # ML model & EDA (Khushi)
+│   ├── notebooks/
+│   │   ├── EDA.ipynb              # Exploratory analysis + feature export
+│   │   └── baseline.ipynb         # Random Forest model + evaluation suite
+│   ├── src/
+│   │   ├── e4_loader.py           # Reads Empatica E4 zip archives
+│   │   ├── extract_features.py    # Builds 30 s windowed feature table
+│   │   ├── semantic_analysis.py   # Deepgram STT + VADER sentiment
+│   │   ├── tone_analysis.py       # Wav2Vec2 acoustic stress classifier
+│   │   ├── final_scoring.py       # Locked 4-function ML interface
+│   │   └── eval_semantic.py       # VADER evaluation script
+│   ├── outputs/
+│   │   ├── features_30s.csv       # Modeling-ready feature table
+│   │   ├── baseline_model.onnx    # ONNX export for cross-platform inference
+│   │   ├── rf_baseline.joblib     # Trained Random Forest + metadata
+│   │   ├── acc_placeholders.json  # Imputation values for missing sensor channels
+│   │   └── eval_semantic.json     # VADER evaluation results
+│   └── predict.py                 # Prediction entry point
 │
 ├── api/                   # FastAPI backend
 │   └── main.py            # REST API endpoints
@@ -23,19 +39,17 @@ Shift-Guard/
 ├── frontend/              # Dashboard UI
 │   └── dashboard.html     # Real-time monitoring dashboard
 │
-├── tests/                 # Test suite
-│   ├── test_schemas.py    # Schema validation tests
-│   └── test_phase1.py     # Comprehensive Phase 1 tests (12 tests)
+├── arduino/               # Hardware / Arduino
+│   └── main.ino
 │
-├── scripts/               # Utilities & demos
-│   └── example_pipeline.py  # Pipeline demonstration
+├── tests/                 # Test suite
+│   ├── test_schemas.py
+│   ├── test_phase1.py
+│   ├── test_full_integration.py   # ML pipeline integration test
+│   └── test_semantic_analysis.py
 │
 ├── docs/                  # Documentation
-│   ├── PHASE1_COMPLETE.md    # Phase 1 summary
-│   ├── INTEGRATION_GUIDE.md  # How to integrate schemas with API
-│   ├── TEST_RESULTS.md       # Test results
-│   └── README_nextmove.md    # Phase 2-4 roadmap
-│
+├── INTEGRATION.md         # ML function interface contract for backend
 ├── requirements.txt
 └── venv/
 ```
@@ -46,64 +60,67 @@ Shift-Guard/
 
 ### Setup
 ```bash
-# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Run Tests
+### ML Pipeline (Khushi)
 ```bash
-# Quick schema validation
-python -m tests.test_schemas
+# Run full integration test (sensor + voice + final score)
+HF_HOME=.hf_cache python tests/test_full_integration.py
 
-# Comprehensive tests (12 tests)
-python -m tests.test_phase1
-
-# Pipeline demo
-python -m scripts.example_pipeline
+# Smoke-test the scoring interface
+python model/src/final_scoring.py
 ```
 
-### Run API Server
+### API Server
 ```bash
-# Start FastAPI backend
 python -m api.main
 # Visit: http://localhost:8000/docs
 ```
 
-### Open Dashboard
+### Dashboard
 ```bash
-# Open in browser
 open frontend/dashboard.html
-# Or visit: http://localhost:8000 (when serving)
+```
+
+---
+
+## ML Interface Contract
+
+The backend imports four stable functions from `model/src/final_scoring.py`.
+See **[INTEGRATION.md](INTEGRATION.md)** for the full contract.
+
+```python
+from model.src.final_scoring import (
+    predict_sensor_score,       # temp + HR → stress probability
+    run_voice_checkin,          # wav path → transcript + scores
+    compute_final_risk_score,   # sensor + voice → final_score dict
+    check_and_get_intervention, # final_score → intervention alert
+)
+
+# Stateful helpers (recommended for live use):
+from model.src.final_scoring import on_sensor_update, on_voice_update
 ```
 
 ---
 
 ## Current Status
 
-### ✅ Phase 1 Complete (Schemas)
-- [x] `SensorReading` schema (accelerometer + HR + temp)
-- [x] `VoiceFeatures` schema (transcript + speech rate + fatigue)
-- [x] `ModelFeatures` schema (model input contract)
-- [x] All tests passing (12/12)
+### ✅ Phase 1 Complete — Schemas & ML pipeline
+- [x] `SensorReading`, `VoiceFeatures`, `ModelFeatures` schemas
+- [x] Random Forest baseline (F1 = 0.86, LOSO cross-validation on WESAD)
+- [x] ONNX export for cross-platform inference
+- [x] Semantic analysis (Deepgram + VADER)
+- [x] Tone analysis (Wav2Vec2 emotion model)
+- [x] Final scoring: stateful independent-clock combination logic
+- [x] All ML integration tests passing
 
-### 🔄 Phase 2 In Progress (Data Loaders)
+### 🔄 Phase 2 In Progress
 - [ ] WESAD loader (`pipeline/loaders.py`)
 - [ ] ESP32 loader
-- [ ] Label mapping (WESAD → LOW/MEDIUM/HIGH)
-
-### 📋 Phase 3 Planned (Features)
-- [ ] 30-second windowing
-- [ ] Feature extraction
-- [ ] Sensor + voice merge
-
-### 📋 Phase 4 Planned (Integration)
-- [ ] ML model integration
-- [ ] FastAPI endpoints
-- [ ] End-to-end testing
+- [ ] FastAPI endpoints connected to ML functions
 
 ---
 
@@ -111,112 +128,12 @@ open frontend/dashboard.html
 
 | Folder | Owner | Purpose |
 |--------|-------|---------|
-| `pipeline/` | Abby | Data pipeline (Phase 1-3) |
-| `model/` | Friend | ML model & EDA |
+| `pipeline/` | Abby | Data pipeline & schemas |
+| `model/` | Khushi | ML model, EDA, scoring |
 | `api/` | Shared | FastAPI backend |
 | `frontend/` | Shared | Dashboard UI |
+| `arduino/` | Hardware team | Sensor firmware |
 
 ---
 
-## How to Integrate
-
-### For Pipeline Team (Abby)
-```python
-# Import schemas in your pipeline code
-from pipeline.schemas import SensorReading, VoiceFeatures, ModelFeatures
-
-# Create sensor readings
-reading = SensorReading(
-    timestamp=1719000000,
-    accel_x=0.12,
-    accel_y=-0.91,
-    accel_z=0.08,
-    heart_rate=82,
-    temperature=98.2
-)
-```
-
-### For ML Team (Friend)
-```python
-# Import schemas in your model code
-from pipeline.schemas import ModelFeatures
-
-# Your model receives this contract
-def predict_risk(features: ModelFeatures):
-    # Access validated fields
-    movement = features.movement_score
-    hrv = features.hrv_score
-    speech = features.speech_rate
-    # ... your model logic
-    return risk_prediction
-```
-
-### For API Team (Integration)
-```python
-# In api/main.py
-from pipeline.schemas import ModelFeatures
-from model.predict import predict_risk  # Friend's model
-
-@app.post("/predict")
-async def predict(features: ModelFeatures):
-    result = predict_risk(features)
-    return result
-```
-
----
-
-## Data Flow
-
-```
-WESAD/ESP32 Sensors
-    ↓
-pipeline/loaders.py → SensorReading
-    ↓
-pipeline/windowing.py (30-second window)
-    ↓
-pipeline/features.py → Extract features
-    ↓
-Deepgram Voice → VoiceFeatures
-    ↓
-Merge → ModelFeatures
-    ↓
-model/ → predict_risk()
-    ↓
-api/main.py → POST /predict
-    ↓
-frontend/dashboard.html
-```
-
----
-
-## Documentation
-
-- **Phase 1 Summary**: `docs/PHASE1_COMPLETE.md`
-- **Integration Guide**: `docs/INTEGRATION_GUIDE.md`
-- **Test Results**: `docs/TEST_RESULTS.md`
-- **Roadmap**: `docs/README_nextmove.md`
-
----
-
-## Testing
-
-All Phase 1 tests passing:
-- ✓ SensorReading validation
-- ✓ VoiceFeatures validation
-- ✓ ModelFeatures validation
-- ✓ Pipeline integration
-- ✓ Edge cases & error handling
-
-**Total: 12/12 tests passing**
-
----
-
-## Next Steps
-
-1. **ML Team**: Drop EDA code in `model/` folder
-2. **Pipeline Team**: Build WESAD loader (Phase 2)
-3. **Integration**: Connect pipeline → model → API
-
----
-
-**Hackathon Project** | **Team**: Abby + Friend | **Last Updated**: June 20, 2026
+**Hackathon Project** | **Last Updated**: June 21, 2026
