@@ -66,11 +66,10 @@ void loop() {
       displayBPM = 110;
     }
 
-    Serial.print("BPM: ");
+    
     Serial.print(displayBPM);
-    Serial.print("  Temp: ");
-    Serial.print(temperature);
-    Serial.println(" C");
+    Serial.print(",");
+    Serial.println(temperature);
   }
 
   delay(10);
