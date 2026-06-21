@@ -10,17 +10,26 @@ import os
 from datetime import datetime
 from model import predict
 
+# arize imports
+from arize.api import Client
+from arize.utils.types import ModelTypes, Environments
+
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
 # Your dashboard backend URL — change this to wherever your backend lives
 DASHBOARD_URL = "http://localhost:8000/"
 
-# Baud rate must match Serial.begin(9600) in your Arduino sketch
-BAUD_RATE = 9600
+# Baud rate must match Serial.begin(115200) in your Arduino sketch
+BAUD_RATE = 115200
 
 # Optional: log all readings to a CSV file
 ENABLE_CSV_LOG = True
 CSV_FILE = "readings_log.csv"
+
+ARIZE_API_KEY  = "ak-0ec7a115-6ce4-46b2-bfe9-e79217547021-BLSvAJlYss7hZ9X0QZV2aJ4Wl-6EEzo2"
+ARIZE_SPACE_ID = "U3BhY2U6NDcyOTM6UzNoeQ=="
+
+arize_client = Client(api_key=ARIZE_API_KEY, space_id=ARIZE_SPACE_ID)
 
 # ── AUTO-DETECT ARDUINO PORT ──────────────────────────────────────────────────
 
@@ -38,7 +47,27 @@ def find_arduino_port():
         print(f"  {port.device} — {port.description}")
     raise Exception("Arduino not found. Plug it in and try again.")
 
-# ── CSV LOGGING (optional) ────────────────────────────────────────────────────
+
+# ARISE LOGGING
+
+def log_to_arize(bpm, temp_c, risk):
+    try:
+        arize_client.log(
+            model_id="shiftguard-rf",
+            model_version="1.0",
+            model_type=ModelTypes.NUMERIC,
+            environment=Environments.PRODUCTION,
+            prediction_id=str(datetime.now().timestamp()),
+            prediction_label=float(risk),
+            features={
+                "bpm": float(bpm),
+                "temp_c": float(temp_c),
+            },
+        )
+    except Exception as e:
+        print(f"  Arize log failed: {e}")
+
+# ── CSV LOGGING ────────────────────────────────────────────────────
 
 def init_csv():
     if not os.path.exists(CSV_FILE):
@@ -93,6 +122,9 @@ def main():
                 }, timeout=2)
             except requests.exceptions.RequestException as e:
                 print(f"  Dashboard send failed: {e}")
+
+            # Log to Arize
+            log_to_arize(bpm, temp_c, risk)
 
             # Log to CSV
             if ENABLE_CSV_LOG:
