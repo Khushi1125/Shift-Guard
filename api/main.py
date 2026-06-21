@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime
 from collections import deque
 from urllib.parse import quote_plus
@@ -157,6 +157,18 @@ class HistoryPoint(BaseModel):
 class HistoryResponse(BaseModel):
     history: List[HistoryPoint]
     window_size: int
+
+
+class ArduinoReading(BaseModel):
+    """Live data from Arduino via bridge.py"""
+    bpm: float
+    temp_c: float
+    risk_score: float
+    timestamp: str
+
+
+# Store latest live Arduino reading from bridge.py
+latest_arduino_reading: Optional[ArduinoReading] = None
 
 
 # Contributor Calculation using Feature Importances
@@ -363,6 +375,23 @@ async def serve_dashboard():
     return FileResponse(DASHBOARD_FILE)
 
 
+@app.post("/")
+async def receive_arduino_data(reading: ArduinoReading):
+    """Receive live sensor data from bridge.py (Arduino → Serial → bridge → here)"""
+    global latest_arduino_reading
+    latest_arduino_reading = reading
+
+    # Convert risk_score to binary (0 or 1) for consistency with WESAD flow
+    risk = 1 if reading.risk_score >= 0.5 else 0
+
+    # Record in sliding window
+    record_reading(risk, int(reading.bpm), reading.temp_c)
+
+    print(f"[ARDUINO] BPM={reading.bpm}, Temp={reading.temp_c}°C, Risk={reading.risk_score:.2f} → {risk}")
+
+    return {"status": "ok", "received_at": datetime.now().isoformat()}
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -375,9 +404,23 @@ async def health_check():
 
 @app.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard():
-    """Get current dashboard state with REAL model prediction."""
-    # Use real model if replay is available, otherwise fallback to mock
-    if replay is not None:
+    """Get current dashboard state with REAL model prediction.
+
+    Priority: Live Arduino data > WESAD replay > Mock data
+    """
+    # PRIORITY 1: Use live Arduino data if available
+    if latest_arduino_reading is not None:
+        risk = 1 if latest_arduino_reading.risk_score >= 0.5 else 0
+        heart_rate = int(latest_arduino_reading.bpm)
+        temperature = round(latest_arduino_reading.temp_c, 1)
+
+        # Generate contributors (mock for now since we only have 2 features)
+        contributors = generate_contributors()
+
+        print(f"[LIVE] Arduino data: BPM={heart_rate}, Temp={temperature}, Risk={risk}")
+
+    # PRIORITY 2: Use WESAD replay if available and no live data
+    elif replay is not None:
         try:
             # Get next WESAD window features
             features = replay.get_next()
@@ -400,14 +443,14 @@ async def get_dashboard():
             risk = generate_risk()
             heart_rate, temperature = generate_vitals(risk)
             contributors = generate_contributors()
+
+    # PRIORITY 3: Fallback to mock if nothing else available
     else:
-        # Fallback to mock if replay not initialized
         risk = generate_risk()
         heart_rate, temperature = generate_vitals(risk)
         contributors = generate_contributors()
 
-    # Record reading and get recommendation
-    record_reading(risk, heart_rate, temperature)
+    # Get recommendation based on sliding window
     recommendation, song = decide_recommendation(risk_window)
 
     print(f"[DEBUG] Dashboard reading: risk={risk}, window_len={len(risk_window)}")
