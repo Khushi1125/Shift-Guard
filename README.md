@@ -1,75 +1,222 @@
-# Shift-Guard — Early Burnout Detection for First Responders & Caregivers
+# Shift-Guard: Worker Fatigue Detection System
 
-Shift-Guard is a wrist-worn early-stress / burnout detector. It reads four
-physiological signals from a wristband, and classifies short windows of data as
-**calm** or **stressed** in real time. This repo contains the data analysis,
-feature engineering, and a Random Forest baseline model, trained on the public
-[WESAD](https://ubicomp.eti.uni-siegen.de/home/datasets/icmi18/) dataset (which
-was recorded on the same Empatica E4 sensors as the hardware prototype).
+AI-powered fatigue detection for healthcare workers using sensor data and voice analysis.
 
-## Repository layout
+---
+
+## Project Structure
 
 ```
 Shift-Guard/
-├── data/
-│   └── WESAD/                  # raw dataset (one folder per subject: S2, S3, …)
-├── notebooks/
-│   ├── EDA.ipynb              # exploratory analysis + feature export (Sections 1–11)
-│   └── baseline.ipynb        # Random Forest model + full evaluation suite
-├── src/
-│   ├── e4_loader.py          # reads the Empatica E4 zip archives (HR, IBI, …)
-│   └── extract_features.py   # builds the 30 s windowed feature table
-├── outputs/                  # generated artifacts (created by the code)
-│   ├── features_30s.csv      # modeling-ready feature table
-│   ├── e4_captured.pkl       # all E4 signals captured from the zips (large)
-│   ├── e4_capture_summary.csv
-│   └── rf_baseline.joblib    # trained baseline model + metadata
-├── docs/
-│   └── SCHEMA.md             # data dictionary: every signal and feature explained
+├── pipeline/              # Data pipeline (Abby's code)
+│   ├── schemas.py         # Pydantic models (SensorReading, VoiceFeatures, ModelFeatures)
+│   ├── loaders.py         # Phase 2: WESAD/ESP32 data loaders (TODO)
+│   ├── features.py        # Phase 3: Feature extraction (TODO)
+│   └── windowing.py       # Phase 3: 30-second windowing (TODO)
+│
+├── model/                 # ML model & EDA (Friend's code)
+│   └── (Drop your ML code here)
+│
+├── api/                   # FastAPI backend
+│   └── main.py            # REST API endpoints
+│
+├── frontend/              # Dashboard UI
+│   └── dashboard.html     # Real-time monitoring dashboard
+│
+├── tests/                 # Test suite
+│   ├── test_schemas.py    # Schema validation tests
+│   └── test_phase1.py     # Comprehensive Phase 1 tests (12 tests)
+│
+├── scripts/               # Utilities & demos
+│   └── example_pipeline.py  # Pipeline demonstration
+│
+├── docs/                  # Documentation
+│   ├── PHASE1_COMPLETE.md    # Phase 1 summary
+│   ├── INTEGRATION_GUIDE.md  # How to integrate schemas with API
+│   ├── TEST_RESULTS.md       # Test results
+│   └── README_nextmove.md    # Phase 2-4 roadmap
+│
 ├── requirements.txt
-└── README.md
+└── venv/
 ```
 
-## Quick start
+---
 
+## Quick Start
+
+### Setup
 ```bash
-# 1. Install dependencies (a virtualenv is recommended)
-pip install -r requirements.txt jupyter
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-# 2. (Optional) regenerate the feature table from the raw data
-python src/extract_features.py        # writes outputs/features_30s.csv
-
-# 3. (Optional) capture the E4 HR/IBI signals from the zip archives
-python src/e4_loader.py               # writes outputs/e4_captured.pkl
-
-# 4. Open the notebooks
-jupyter notebook notebooks/EDA.ipynb
-jupyter notebook notebooks/baseline.ipynb
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-The notebooks anchor their working directory to the project root automatically, so
-they can be launched from anywhere.
+### Run Tests
+```bash
+# Quick schema validation
+python -m tests.test_schemas
 
-## Pipeline overview
+# Comprehensive tests (12 tests)
+python -m tests.test_phase1
 
-1. **EDA.ipynb** — validates data quality, aligns labels, derives HR from BVP,
-   quantifies how strongly each signal separates calm vs stressed, and exports
-   `outputs/features_30s.csv`.
-2. **extract_features.py** — slices each subject's session into 30-second windows
-   (50% overlap), keeps only pure calm/stressed windows, and computes per-signal
-   features for ACC, BVP, HR (derived), TEMP and EDA.
-3. **baseline.ipynb** — trains a Random Forest with **Leave-One-Subject-Out**
-   cross-validation (the leakage-safe metric for a wearable) and reports accuracy,
-   precision/recall/F1, ROC-AUC, confusion matrix, feature importances, and an
-   overfitting analysis.
+# Pipeline demo
+python -m scripts.example_pipeline
+```
 
-## Baseline result (Leave-One-Subject-Out)
+### Run API Server
+```bash
+# Start FastAPI backend
+python -m api.main
+# Visit: http://localhost:8000/docs
+```
 
-| Metric | Score |
-|--------|-------|
-| Accuracy | 0.905 |
-| F1 (stressed) | 0.866 |
-| ROC-AUC | 0.970 |
+### Open Dashboard
+```bash
+# Open in browser
+open frontend/dashboard.html
+# Or visit: http://localhost:8000 (when serving)
+```
 
-vs. a majority-class baseline of 0.64. See `docs/SCHEMA.md` for the full data
-dictionary and `notebooks/baseline.ipynb` for the complete evaluation.
+---
+
+## Current Status
+
+### ✅ Phase 1 Complete (Schemas)
+- [x] `SensorReading` schema (accelerometer + HR + temp)
+- [x] `VoiceFeatures` schema (transcript + speech rate + fatigue)
+- [x] `ModelFeatures` schema (model input contract)
+- [x] All tests passing (12/12)
+
+### 🔄 Phase 2 In Progress (Data Loaders)
+- [ ] WESAD loader (`pipeline/loaders.py`)
+- [ ] ESP32 loader
+- [ ] Label mapping (WESAD → LOW/MEDIUM/HIGH)
+
+### 📋 Phase 3 Planned (Features)
+- [ ] 30-second windowing
+- [ ] Feature extraction
+- [ ] Sensor + voice merge
+
+### 📋 Phase 4 Planned (Integration)
+- [ ] ML model integration
+- [ ] FastAPI endpoints
+- [ ] End-to-end testing
+
+---
+
+## Team Ownership
+
+| Folder | Owner | Purpose |
+|--------|-------|---------|
+| `pipeline/` | Abby | Data pipeline (Phase 1-3) |
+| `model/` | Friend | ML model & EDA |
+| `api/` | Shared | FastAPI backend |
+| `frontend/` | Shared | Dashboard UI |
+
+---
+
+## How to Integrate
+
+### For Pipeline Team (Abby)
+```python
+# Import schemas in your pipeline code
+from pipeline.schemas import SensorReading, VoiceFeatures, ModelFeatures
+
+# Create sensor readings
+reading = SensorReading(
+    timestamp=1719000000,
+    accel_x=0.12,
+    accel_y=-0.91,
+    accel_z=0.08,
+    heart_rate=82,
+    temperature=98.2
+)
+```
+
+### For ML Team (Friend)
+```python
+# Import schemas in your model code
+from pipeline.schemas import ModelFeatures
+
+# Your model receives this contract
+def predict_risk(features: ModelFeatures):
+    # Access validated fields
+    movement = features.movement_score
+    hrv = features.hrv_score
+    speech = features.speech_rate
+    # ... your model logic
+    return risk_prediction
+```
+
+### For API Team (Integration)
+```python
+# In api/main.py
+from pipeline.schemas import ModelFeatures
+from model.predict import predict_risk  # Friend's model
+
+@app.post("/predict")
+async def predict(features: ModelFeatures):
+    result = predict_risk(features)
+    return result
+```
+
+---
+
+## Data Flow
+
+```
+WESAD/ESP32 Sensors
+    ↓
+pipeline/loaders.py → SensorReading
+    ↓
+pipeline/windowing.py (30-second window)
+    ↓
+pipeline/features.py → Extract features
+    ↓
+Deepgram Voice → VoiceFeatures
+    ↓
+Merge → ModelFeatures
+    ↓
+model/ → predict_risk()
+    ↓
+api/main.py → POST /predict
+    ↓
+frontend/dashboard.html
+```
+
+---
+
+## Documentation
+
+- **Phase 1 Summary**: `docs/PHASE1_COMPLETE.md`
+- **Integration Guide**: `docs/INTEGRATION_GUIDE.md`
+- **Test Results**: `docs/TEST_RESULTS.md`
+- **Roadmap**: `docs/README_nextmove.md`
+
+---
+
+## Testing
+
+All Phase 1 tests passing:
+- ✓ SensorReading validation
+- ✓ VoiceFeatures validation
+- ✓ ModelFeatures validation
+- ✓ Pipeline integration
+- ✓ Edge cases & error handling
+
+**Total: 12/12 tests passing**
+
+---
+
+## Next Steps
+
+1. **ML Team**: Drop EDA code in `model/` folder
+2. **Pipeline Team**: Build WESAD loader (Phase 2)
+3. **Integration**: Connect pipeline → model → API
+
+---
+
+**Hackathon Project** | **Team**: Abby + Friend | **Last Updated**: June 20, 2026
