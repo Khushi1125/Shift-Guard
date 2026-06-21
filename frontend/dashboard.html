@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Burnout Detection Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Rubik:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* Light Mode Theme - Professional Clean */
+            --bg-primary: #F8FAFC;
+            --bg-secondary: #F1F5F9;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #F8FAFC;
+
+            /* Accent Colors */
+            --accent-blue: #3B82F6;
+            --accent-blue-light: #2563EB;
+            --accent-blue-dark: #1D4ED8;
+
+            /* Status Colors */
+            --color-success: #10B981;
+            --color-warning: #F59E0B;
+            --color-danger: #EF4444;
+            --color-danger-light: #F87171;
+
+            /* Text Colors */
+            --text-primary: #0F172A;
+            --text-secondary: #475569;
+            --text-muted: #94A3B8;
+
+            /* Shadows */
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 8px 24px rgba(59, 130, 246, 0.12);
+            --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
+            color: var(--text-primary);
+            height: 100vh;
+            padding: 16px;
+            line-height: 1.5;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        h1 {
+            font-family: 'Rubik', sans-serif;
+            font-size: 1.8em;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+            letter-spacing: -0.03em;
+            text-transform: uppercase;
+        }
+
+        /* Button */
+        .refresh-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-blue-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 700;
+            cursor: pointer;
+            margin-bottom: 12px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-family: 'Rubik', sans-serif;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+            background: linear-gradient(135deg, var(--accent-blue-light) 0%, var(--accent-blue) 100%);
+        }
+
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .dashboard-grid:first-of-type {
+            margin-bottom: 12px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid #E2E8F0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            background: var(--bg-card-hover);
+            border-color: #CBD5E1;
+        }
+
+        .card-title {
+            font-family: 'Rubik', sans-serif;
+            font-size: 0.75em;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--accent-blue);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        /* Risk Score Card */
+        .risk-score-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
+        }
+
+        .risk-score-value {
+            font-family: 'Rubik', sans-serif;
+            font-size: 3.5em;
+            font-weight: 800;
+            line-height: 1;
+            margin: 10px 0;
+            transition: all 0.4s ease;
+        }
+
+        .risk-level-badge {
+            font-family: 'Rubik', sans-serif;
+            font-size: 0.9em;
+            font-weight: 700;
+            padding: 8px 20px;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Risk Level Colors */
+        .risk-LOW .risk-score-value {
+            color: var(--color-success);
+        }
+
+        .risk-LOW .risk-level-badge {
+            background: var(--color-success);
+            color: white;
+        }
+
+        .risk-MEDIUM .risk-score-value {
+            color: var(--color-warning);
+        }
+
+        .risk-MEDIUM .risk-level-badge {
+            background: var(--color-warning);
+            color: white;
+        }
+
+        .risk-HIGH .risk-score-value {
+            color: var(--color-danger);
+            animation: pulse 2.5s ease-in-out infinite;
+        }
+
+        .risk-HIGH .risk-level-badge {
+            background: var(--color-danger);
+            color: white;
+            animation: pulse-badge 2.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.03); }
+        }
+
+        @keyframes pulse-badge {
+            0%, 100% { box-shadow: 0 4px 15px rgba(239, 68, 68, 0.5); }
+            50% { box-shadow: 0 4px 30px rgba(239, 68, 68, 0.8); }
+        }
+
+        /* Contributors */
+        .contributor-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 4px 0;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-blue);
+            transition: all 0.2s ease;
+        }
+
+        .contributor-item:hover {
+            background: var(--bg-primary);
+            border-left-width: 4px;
+            transform: translateX(2px);
+        }
+
+        .contributor-name {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .contributor-value {
+            font-family: 'Rubik', sans-serif;
+            font-size: 1em;
+            font-weight: 800;
+            color: var(--accent-blue-light);
+        }
+
+        /* Recommendation */
+        .recommendation-text {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.1) 100%);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-blue);
+            font-size: 0.9em;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* System Status */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .status-item:hover {
+            background: var(--bg-primary);
+            transform: translateX(2px);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px currentColor;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .status-online {
+            background: var(--color-success);
+            color: var(--color-success);
+        }
+
+        .status-warning {
+            background: var(--color-warning);
+            color: var(--color-warning);
+        }
+
+        .status-offline {
+            background: var(--color-danger);
+            color: var(--color-danger);
+        }
+
+        .status-name {
+            font-weight: 600;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        /* Transcript */
+        .transcript-quote {
+            font-style: italic;
+            font-size: 0.9em;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid var(--accent-blue);
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .metric-box {
+            background: var(--bg-secondary);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.2s ease;
+            border: 1px solid #E2E8F0;
+        }
+
+        .metric-box:hover {
+            background: var(--bg-primary);
+            border-color: #CBD5E1;
+            transform: translateY(-1px);
+        }
+
+        .metric-label {
+            font-size: 0.7em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+
+        .metric-value {
+            font-family: 'Rubik', sans-serif;
+            font-size: 1.3em;
+            font-weight: 800;
+            color: var(--accent-blue-light);
+        }
+
+        /* Chart */
+        #historyChart {
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .risk-score-value {
+                font-size: 3em;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.5em;
+                margin-bottom: 8px;
+            }
+
+            .risk-score-value {
+                font-size: 2.5em;
+            }
+
+            .card {
+                padding: 12px;
+            }
+        }
+
+        /* Loading State */
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Burnout Detection</h1>
+
+        <button class="refresh-btn" onclick="refreshDashboard()">Refresh Dashboard</button>
+
+        <div class="dashboard-grid">
+            <!-- Risk Score Card -->
+            <div class="card risk-score-card" id="riskScoreCard">
+                <div class="card-title">Current Risk</div>
+                <div class="risk-score-value" id="riskScore">--</div>
+                <div class="risk-level-badge" id="riskLevel">LOADING</div>
+            </div>
+
+            <!-- Contributors -->
+            <div class="card">
+                <div class="card-title">Contributors</div>
+                <div id="contributors">
+                    <div class="contributor-item">
+                        <span class="contributor-name">Loading...</span>
+                        <span class="contributor-value">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recommendation -->
+            <div class="card">
+                <div class="card-title">Recommendation</div>
+                <div class="recommendation-text" id="recommendation">
+                    Loading recommendation...
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Transcript -->
+            <div class="card">
+                <div class="card-title">Latest Transcript</div>
+                <div class="transcript-quote" id="transcript">
+                    "Loading transcript..."
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <div class="metric-label">Speech Rate</div>
+                        <div class="metric-value"><span id="speechRate">--</span> <small style="font-size: 0.5em; color: var(--text-muted);">WPM</small></div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">Fatigue</div>
+                        <div class="metric-value" id="fatigueScore">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk History -->
+            <div class="card">
+                <div class="card-title">Risk History</div>
+                <canvas id="historyChart"></canvas>
+            </div>
+
+            <!-- System Status -->
+            <div class="card">
+                <div class="card-title">System Status</div>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="status-indicator status-online"></div>
+                        <span class="status-name">Deepgram</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-indicator status-online"></div>
+                        <span class="status-name">Model</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-indicator status-online"></div>
+                        <span class="status-name">Dashboard</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-indicator status-warning"></div>
+                        <span class="status-name">ESP32</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-indicator status-online"></div>
+                        <span class="status-name">QNX</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-indicator status-online"></div>
+                        <span class="status-name">API</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let historyChart = null;
+
+        async function fetchDashboard() {
+            const response = await fetch('http://localhost:8000/dashboard');
+            const data = await response.json();
+
+            const riskScoreCard = document.getElementById('riskScoreCard');
+            riskScoreCard.className = `card risk-score-card risk-${data.risk_level}`;
+
+            document.getElementById('riskScore').textContent = data.risk_score;
+            document.getElementById('riskLevel').textContent = data.risk_level;
+
+            const contributorsHTML = `
+                <div class="contributor-item">
+                    <span class="contributor-name">Voice Fatigue</span>
+                    <span class="contributor-value">+${data.contributors.voice_fatigue}</span>
+                </div>
+                <div class="contributor-item">
+                    <span class="contributor-name">Movement Drift</span>
+                    <span class="contributor-value">+${data.contributors.movement_drift}</span>
+                </div>
+                <div class="contributor-item">
+                    <span class="contributor-name">HRV</span>
+                    <span class="contributor-value">+${data.contributors.hrv}</span>
+                </div>
+                <div class="contributor-item">
+                    <span class="contributor-name">Shift Duration</span>
+                    <span class="contributor-value">+${data.contributors.shift_duration}</span>
+                </div>
+            `;
+            document.getElementById('contributors').innerHTML = contributorsHTML;
+            document.getElementById('recommendation').textContent = data.recommendation;
+        }
+
+        async function fetchTranscript() {
+            const response = await fetch('http://localhost:8000/latest-transcript');
+            const data = await response.json();
+
+            document.getElementById('transcript').textContent = `"${data.transcript}"`;
+            document.getElementById('speechRate').textContent = data.speech_rate;
+            document.getElementById('fatigueScore').textContent = data.acoustic_fatigue;
+        }
+
+        async function fetchHistory() {
+            const response = await fetch('http://localhost:8000/history');
+            const data = await response.json();
+
+            const timestamps = data.history.map(item => item.timestamp);
+            const riskScores = data.history.map(item => item.risk_score);
+
+            const ctx = document.getElementById('historyChart').getContext('2d');
+
+            if (historyChart) {
+                historyChart.destroy();
+            }
+
+            // Risk zone plugin
+            const riskZonesPlugin = {
+                id: 'riskZones',
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea: { top, bottom, left, right }, scales: { y } } = chart;
+
+                    const highY = y.getPixelForValue(100);
+                    const mediumTopY = y.getPixelForValue(70);
+                    const lowTopY = y.getPixelForValue(40);
+                    const zeroY = y.getPixelForValue(0);
+
+                    // HIGH zone (red)
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+                    ctx.fillRect(left, highY, right - left, mediumTopY - highY);
+
+                    // MEDIUM zone (yellow)
+                    ctx.fillStyle = 'rgba(245, 158, 11, 0.1)';
+                    ctx.fillRect(left, mediumTopY, right - left, lowTopY - mediumTopY);
+
+                    // LOW zone (green)
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.1)';
+                    ctx.fillRect(left, lowTopY, right - left, zeroY - lowTopY);
+                }
+            };
+
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [{
+                        label: 'Risk Score',
+                        data: riskScores,
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: riskScores.map(score =>
+                            score < 40 ? '#10B981' : score < 70 ? '#F59E0B' : '#EF4444'
+                        ),
+                        pointBorderColor: '#FFFFFF',
+                        pointBorderWidth: 3,
+                        pointRadius: 7,
+                        pointHoverRadius: 9
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                            titleColor: '#3B82F6',
+                            bodyColor: '#0F172A',
+                            borderColor: '#3B82F6',
+                            borderWidth: 1,
+                            padding: 14,
+                            displayColors: false,
+                            titleFont: {
+                                family: 'Rubik',
+                                size: 14,
+                                weight: '700'
+                            },
+                            bodyFont: {
+                                family: 'Inter',
+                                size: 13,
+                                weight: '600'
+                            },
+                            callbacks: {
+                                label: function(context) {
+                                    const score = context.parsed.y;
+                                    const level = score < 40 ? 'LOW' : score < 70 ? 'MEDIUM' : 'HIGH';
+                                    return `Risk: ${score} (${level})`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.2)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#64748B',
+                                font: {
+                                    family: 'Inter',
+                                    size: 12,
+                                    weight: '600'
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.2)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#64748B',
+                                font: {
+                                    family: 'Inter',
+                                    size: 12,
+                                    weight: '600'
+                                }
+                            }
+                        }
+                    }
+                },
+                plugins: [riskZonesPlugin]
+            });
+        }
+
+        async function refreshDashboard() {
+            const btn = document.querySelector('.refresh-btn');
+            btn.classList.add('loading');
+            btn.textContent = 'Refreshing...';
+
+            // Fetch dashboard first to update state, then fetch history/transcript
+            await fetchDashboard();
+            await Promise.all([
+                fetchTranscript(),
+                fetchHistory()
+            ]);
+
+            btn.classList.remove('loading');
+            btn.textContent = 'Refresh Dashboard';
+        }
+
+        refreshDashboard();
+        // setInterval(refreshDashboard, 5000);
+    </script>
+</body>
+
+</html>
