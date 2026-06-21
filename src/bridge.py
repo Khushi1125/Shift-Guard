@@ -13,7 +13,7 @@ from model import predict
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
 # Your dashboard backend URL — change this to wherever your backend lives
-DASHBOARD_URL = "http://localhost:3000/api/results"
+DASHBOARD_URL = "http://localhost:8000/"
 
 # Baud rate must match Serial.begin(9600) in your Arduino sketch
 BAUD_RATE = 9600
