@@ -62,24 +62,59 @@ class VoiceFeatures(BaseModel):
 
 class ModelFeatures(BaseModel):
     """
-    Final model input contract - computed from SensorFeatures + VoiceFeatures.
+    Final model input contract - 18 features extracted from WESAD sensors.
 
-    This is the handoff point between data pipeline and ML model.
-    All features must be present for model inference.
+    Matches the feature extraction from extract_features.py (30s windows).
+    This is the exact schema the trained Random Forest model expects.
     """
-    movement_score: float = Field(..., ge=0.0, le=1.0, description="Derived from accelerometer data")
-    hrv_score: float = Field(..., ge=0.0, le=1.0, description="Heart rate variability score")
-    speech_rate: int = Field(..., description="Words per minute from voice analysis")
-    acoustic_fatigue: float = Field(..., ge=0.0, le=1.0, description="Fatigue score from voice")
-    shift_duration_hours: float = Field(..., ge=0.0, description="Hours elapsed in current shift")
+    # Accelerometer features (movement + fidgeting)
+    acc_mag_mean: float = Field(..., description="Mean of ACC magnitude (orientation-invariant)")
+    acc_mag_std: float = Field(..., description="Std dev of ACC magnitude")
+    acc_hf_mean: float = Field(..., description="Mean high-frequency ACC intensity (fidgeting)")
+
+    # Blood volume pulse features
+    bvp_mean: float = Field(..., description="Mean BVP amplitude")
+    bvp_std: float = Field(..., description="Std dev of BVP amplitude")
+
+    # Heart rate features (derived from BVP)
+    hr_mean: float = Field(..., description="Mean heart rate (BPM)")
+    hr_std: float = Field(..., description="Std dev of heart rate (HRV proxy)")
+    hr_slope: float = Field(..., description="Linear trend in heart rate")
+    hr_min: float = Field(..., description="Minimum heart rate in window")
+    hr_max: float = Field(..., description="Maximum heart rate in window")
+
+    # Temperature features
+    temp_mean: float = Field(..., description="Mean body temperature")
+    temp_slope: float = Field(..., description="Temperature drift (trend)")
+    temp_delta: float = Field(..., description="Net temperature change across window")
+
+    # Electrodermal activity features (skin conductance - stress marker)
+    eda_mean: float = Field(..., description="Mean skin conductance level")
+    eda_std: float = Field(..., description="Std dev of skin conductance")
+    eda_slope: float = Field(..., description="Skin conductance rising trend")
+    eda_min: float = Field(..., description="Minimum skin conductance")
+    eda_max: float = Field(..., description="Maximum skin conductance")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "movement_score": 0.31,
-                "hrv_score": 0.58,
-                "speech_rate": 92,
-                "acoustic_fatigue": 0.74,
-                "shift_duration_hours": 10.5
+                "acc_mag_mean": 1.02,
+                "acc_mag_std": 0.15,
+                "acc_hf_mean": 0.08,
+                "bvp_mean": -45.2,
+                "bvp_std": 120.5,
+                "hr_mean": 82.3,
+                "hr_std": 6.8,
+                "hr_slope": 0.02,
+                "hr_min": 72.0,
+                "hr_max": 95.0,
+                "temp_mean": 32.1,
+                "temp_slope": 0.001,
+                "temp_delta": 0.03,
+                "eda_mean": 2.45,
+                "eda_std": 0.82,
+                "eda_slope": 0.015,
+                "eda_min": 1.8,
+                "eda_max": 4.2
             }
         }
